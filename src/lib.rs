@@ -5,51 +5,28 @@ mod crc;
 mod errors;
 mod parser;
 mod message;
+mod types;
 
-pub use crc::crc;
 pub use errors::*;
-pub use parser::{
-    FieldDefinition, FieldValue, FileHeader, Message, MessageDefinition, Record, RecordHeader,
-};
+pub use types::*;
 pub use message::*;
 
+use crc::crc;
 use std::rc::Rc;
 use std::slice::Iter;
 
-pub trait FitParser<'fit> {
-    fn step(&mut self) -> Result<Record<'fit>, Error>;
-}
-
-pub trait Fit<'src> {
-    type Parser: FitParser<'src>;
-    type RecordIterator: Iterator<Item=Record<'src>>;
-    type MessageIterator: Iterator<Item=Message<'src>>;
-    fn header(&self) -> FileHeader;
-    fn records(&'src self) -> Self::RecordIterator;
-    fn messages(&'src self) -> Self::MessageIterator;
-    fn parser(&'src self) -> Self::Parser;
-}
-
 /// Encapsulates a complete Fit file stored in a [u8] slice.
-pub struct CompleteFit<'buf> {
-    header: FileHeader,
-    data: &'buf [u8],
+pub struct Fit<'buf> {
+    pub header: FileHeader,
+    pub data: &'buf [u8],
 }
 
-pub struct CompleteParser<'a> {
+pub struct Parser<'a> {
     data: &'a [u8],
     definitions: [Option<Rc<MessageDefinition>>; 16],
 }
 
-pub struct CompleteRecordIterator<'a> {
-    parser: CompleteParser<'a>,
-}
-
-pub struct CompleteMessageIterator<'a> {
-    parser: CompleteParser<'a>,
-}
-
-impl<'a> CompleteFit<'a> {
+impl<'a> Fit<'a> {
     /// Constructs a new Fit object.
     pub fn from_bytes(data: &'a [u8]) -> Result<Self, Error> {
         let (_, header) = parser::take_file_header(data)?;
@@ -62,12 +39,8 @@ impl<'a> CompleteFit<'a> {
                 });
             }
         }
-        if (header.file_size as usize) < data.len() - header.length as usize - 2 {
-            return Err(Error::InsufficientData { required: header.file_size as usize })
-        }
         Ok(Self { header, data })
     }
-
     /// Computes the end-of-file checksum.
     pub fn checksum(&self) -> u16 {
         self.data[..(self.data.len() - 2)].iter().fold(0, crc)
@@ -91,20 +64,20 @@ impl<'a> CompleteFit<'a> {
     }
 }
 
-impl<'buf> Fit<'buf> for CompleteFit<'buf> {
+pub struct RecordIterator<'a> {
+    parser: Parser<'a>,
+}
 
-    type Parser = CompleteParser<'buf>;
-    type RecordIterator = CompleteRecordIterator<'buf>;
-    type MessageIterator = CompleteMessageIterator<'buf>;
+pub struct MessageIterator<'a> {
+    parser: Parser<'a>,
+}
 
-    fn header(&self) -> FileHeader {
-        self.header.clone()
-    }
+impl<'buf> Fit<'buf>{
     /// Constructs an iterator over the records (message definitions, messages, and file checksum)
     /// in the Fit file.
-    fn records(&'buf self) -> Self::RecordIterator {
-        CompleteRecordIterator {
-            parser: CompleteParser::from(self),
+    pub fn records(&'buf self) -> RecordIterator<'buf> {
+        RecordIterator {
+            parser: Parser::from(self),
         }
     }
     /// Constructs an iterator over all the messages in the Fit file.
@@ -118,21 +91,20 @@ impl<'buf> Fit<'buf> for CompleteFit<'buf> {
     ///     })
     ///     .collect::<Vec<_>>();
     /// ```
-    fn messages(&'buf self) -> Self::MessageIterator {
-        CompleteMessageIterator {
-            parser: CompleteParser::from(self),
+    pub fn messages(&'buf self) -> MessageIterator<'buf> {
+        MessageIterator {
+            parser: Parser::from(self),
         }
     }
-
-    fn parser(&'buf self) -> Self::Parser {
-        CompleteParser::from(self)
+    pub fn parser(&'buf self) -> Parser<'buf> {
+        Parser::from(self)
     }
 }
 
-impl<'a> From<&'a CompleteFit<'a>> for CompleteParser<'a> {
-    fn from(fit: &CompleteFit<'a>) -> Self {
+impl<'a> From<&'a Fit<'a>> for Parser<'a> {
+    fn from(fit: &Fit<'a>) -> Self {
         let header_length = fit.header.length as usize;
-        CompleteParser {
+        Parser {
             data: &fit.data[header_length..], // skip over the header data
             definitions: [
                 None, None, None, None, None, None, None, None, None, None, None, None, None, None,
@@ -142,10 +114,9 @@ impl<'a> From<&'a CompleteFit<'a>> for CompleteParser<'a> {
     }
 }
 
-impl<'a> FitParser<'a> for CompleteParser<'a> {
+impl<'a> Parser<'a> {
     #[inline(always)]
-    fn step(&mut self) -> Result<parser::Record<'a>, Error> {
-        use parser::RecordType;
+    fn step(&mut self) -> Result<Record<'a>, Error> {
         if self.data.len() == 2 {
             let (_, checksum) = parser::take_checksum(self.data)?;
             return Ok(Record::Checksum(checksum));
@@ -188,7 +159,7 @@ impl<'a> FitParser<'a> for CompleteParser<'a> {
     }
 }
 
-impl<'a> Iterator for CompleteRecordIterator<'a> {
+impl<'a> Iterator for RecordIterator<'a> {
     type Item = Record<'a>;
     #[inline(always)]
     fn next(&mut self) -> Option<Record<'a>> {
@@ -199,7 +170,7 @@ impl<'a> Iterator for CompleteRecordIterator<'a> {
     }
 }
 
-impl<'a> Iterator for CompleteMessageIterator<'a> {
+impl<'a> Iterator for MessageIterator<'a> {
     type Item = Message<'a>;
     #[inline(always)]
     fn next(&mut self) -> Option<Message<'a>> {
@@ -208,35 +179,6 @@ impl<'a> Iterator for CompleteMessageIterator<'a> {
                 Ok(Record::Message(_, message)) => return Some(message),
                 Ok(Record::Definition(_, _)) => continue,
                 _ => return None,
-            }
-        }
-    }
-}
-
-pub struct ReadParser<'st, R: std::io::Read + 'st> {
-    reader: &'st mut R,
-    buffer: Vec<u8>,
-    parser: CompleteParser<'st>,
-}
-
-impl<'a, R: std::io::Read + 'a> FitParser<'a> for ReadParser<'a, R> {
-    fn step(&mut self) -> Result<Record<'a>, Error> {
-        match self.parser.step() {
-            Ok(res) => Ok(res),
-            Err(Error::InsufficientData { required }) => {
-                let mut buf: Vec<u8> = Vec::with_capacity(required);
-                match self.reader.read(&mut buf) {
-                    Ok(_read) => {
-                        self.buffer.append(&mut buf);
-                        return self.step();
-                    }
-                    Err(_) => {
-                        return Err(Error::Unknown);
-                    }
-                }
-            }
-            Err(_) => {
-                return Err(Error::Unknown);
             }
         }
     }
