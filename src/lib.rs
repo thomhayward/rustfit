@@ -1,113 +1,60 @@
 #[macro_use]
 extern crate nom;
 
+mod crc;
+mod errors;
 mod parser;
-pub use self::parser::{
+mod message;
+
+pub use crc::crc;
+pub use errors::*;
+pub use parser::{
     FieldDefinition, FieldValue, FileHeader, Message, MessageDefinition, Record, RecordHeader,
 };
+pub use message::*;
 
 use std::rc::Rc;
 use std::slice::Iter;
 
-#[derive(Debug)]
-pub enum Error {
-    /// The length of the file header is not supported. Should be either 12 or 14 bytes.
-    InvalidHeaderSize { found: u8 },
-    InvalidHeaderTag { found: Vec<u8>, expected: Vec<u8> },
-    HeaderChecksumFailure { found: u16, computed: u16 },
-    /// The parser encountered a data message bound to a local-type that does not have an
-    /// associated message definition.
-    UndefinedLocalType { position: usize, header: u8 },
-    /// The parser encountered a definition message that defines a data message longer than 255
-    /// bytes.
-    InvalidMessageLength { position: usize, header: u8, definition: MessageDefinition },
-    EndOfInput,
-    InsufficientData,
-    Unknown,
+pub trait FitParser<'fit> {
+    fn step(&mut self) -> Result<Record<'fit>, Error>;
 }
 
-impl<'a> From<nom::Err<&'a [u8], u32>> for Error {
-    fn from(error: nom::Err<&'a [u8], u32>) -> Self {
-        use nom::Context::Code;
-        use nom::Err::{Error, Incomplete};
-        use nom::ErrorKind::Custom;
-        match error {
-            Error(Code(input, Custom(parser::ERROR_HEADER_SIZE))) => {
-                self::Error::InvalidHeaderSize { found: input[0] }
-            },
-            Error(Code(input, Custom(parser::ERROR_HEADER_TAG))) => {
-                self::Error::InvalidHeaderTag {
-                    found: input[..4].to_vec(),
-                    expected: [0x2e, 0x46, 0x49, 0x54].to_vec(),
-                }
-            },
-            Incomplete(_) => self::Error::InsufficientData,
-            _ => self::Error::Unknown,
-        }
-    }
+pub trait Fit<'src> {
+    type Parser: FitParser<'src>;
+    type RecordIterator: Iterator<Item=Record<'src>>;
+    type MessageIterator: Iterator<Item=Message<'src>>;
+    fn header(&self) -> FileHeader;
+    fn records(&'src self) -> Self::RecordIterator;
+    fn messages(&'src self) -> Self::MessageIterator;
+    fn parser(&'src self) -> Self::Parser;
 }
 
-/// FIT Cyclic Redundancy Checksum.
-///
-/// FIT's handling of checksums is dumb. Generally, it is a very good idea to completely
-/// ignore the end of file checksum. The current code only enforces the header checksum.
-///
-/// # Examples
-/// Calculate the CRC of an array of bytes:
-/// ```
-/// let bytes: [u8; 10] = [43, 23, 23, 71, 95, 21, 38, 90, 91, 32];
-/// let checksum = bytes.iter().fold(0, crc);
-/// assert_eq!(checksum, 0x4efc);
-/// ```
-pub fn crc(mut current: u16, byte: &u8) -> u16 {
-    const TABLE: [u16; 16] = [
-        0x0000, 0xcc01, 0xd801, 0x1400, 0xf001, 0x3c00, 0x2800, 0xe401, 0xa001, 0x6c00, 0x7800,
-        0xb401, 0x5000, 0x9c01, 0x8801, 0x4400,
-    ];
-    let tmp = TABLE[(current & 0x0f) as usize];
-    current = current.rotate_right(4) & 0x0fff;
-    current = current ^ tmp ^ TABLE[(byte & 0x0f) as usize];
-    let tmp = TABLE[(current & 0x0f) as usize];
-    current = current.rotate_right(4) & 0x0fff;
-    current = current ^ tmp ^ TABLE[(byte.rotate_right(4) & 0x0f) as usize];
-    current
+/// Encapsulates a complete Fit file stored in a [u8] slice.
+pub struct CompleteFit<'buf> {
+    header: FileHeader,
+    data: &'buf [u8],
 }
 
-pub struct Fit<'a> {
-    pub header: FileHeader,
-    pub data: &'a [u8],
-}
-
-pub struct FitParser<'a> {
+pub struct CompleteParser<'a> {
     data: &'a [u8],
     definitions: [Option<Rc<MessageDefinition>>; 16],
-    start_length: usize,
 }
 
-pub struct RecordIterator<'a> {
-    parser: FitParser<'a>,
+pub struct CompleteRecordIterator<'a> {
+    parser: CompleteParser<'a>,
 }
 
-pub struct MessageIterator<'a> {
-    parser: FitParser<'a>,
+pub struct CompleteMessageIterator<'a> {
+    parser: CompleteParser<'a>,
 }
 
-pub struct FieldIterator<'a> {
-    message: &'a Message<'a>,
-    iterator: Iter<'a, FieldDefinition>,
-}
-
-pub struct DeveloperFieldIterator<'a> {
-    message: &'a Message<'a>,
-    iterator: Iter<'a, FieldDefinition>,
-}
-
-impl<'a> Fit<'a> {
+impl<'a> CompleteFit<'a> {
     /// Constructs a new Fit object.
-    pub fn from_bytes(bytes: &'a [u8]) -> Result<Fit<'a>, Error> {
-        let (_, header) = parser::take_file_header(bytes)?;
+    pub fn from_bytes(data: &'a [u8]) -> Result<Self, Error> {
+        let (_, header) = parser::take_file_header(data)?;
         if let Some(checksum) = header.checksum {
-            let computed = bytes[..12].iter().fold(0, crc);
+            let computed = data[..12].iter().fold(0, crc);
             if checksum != computed && checksum != 0 {
                 return Err(Error::HeaderChecksumFailure {
                     found: checksum,
@@ -115,34 +62,12 @@ impl<'a> Fit<'a> {
                 });
             }
         }
-        Ok(Fit {
-            header: header,
-            data: bytes,
-        })
-    }
-    /// Constructs an iterator over the records (message definitions, messages, and file checksum)
-    /// in the Fit file.
-    pub fn records(&'a self) -> RecordIterator<'a> {
-        RecordIterator {
-            parser: FitParser::from(self),
+        if (header.file_size as usize) < data.len() - header.length as usize - 2 {
+            return Err(Error::InsufficientData { required: header.file_size as usize })
         }
+        Ok(Self { header, data })
     }
-    /// Constructs an iterator over all the messages in the Fit file.
-    /// # Example
-    /// ```
-    /// let power_data = fit
-    ///     .messages()
-    ///     .filter_map(|ref message| match message.number() {
-    ///         20 => message.field_u16(7),
-    ///         _ => None
-    ///     })
-    ///     .collect::<Vec<_>>();
-    /// ```
-    pub fn messages(&'a self) -> MessageIterator<'a> {
-        MessageIterator {
-            parser: FitParser::from(self),
-        }
-    }
+
     /// Computes the end-of-file checksum.
     pub fn checksum(&self) -> u16 {
         self.data[..(self.data.len() - 2)].iter().fold(0, crc)
@@ -166,123 +91,58 @@ impl<'a> Fit<'a> {
     }
 }
 
-impl<'a> Message<'a> {
-    /// Returns the global message number.
-    #[inline(always)]
-    pub fn number(&self) -> u16 {
-        self.definition.number
+impl<'buf> Fit<'buf> for CompleteFit<'buf> {
+
+    type Parser = CompleteParser<'buf>;
+    type RecordIterator = CompleteRecordIterator<'buf>;
+    type MessageIterator = CompleteMessageIterator<'buf>;
+
+    fn header(&self) -> FileHeader {
+        self.header.clone()
     }
-    /// Returns the value of the field specified by `number`. If the field number is not present,
-    /// `None` is returned. A field may present but not set, in which case `FieldValue::Nil` is
-    /// returned.
-    #[inline(always)]
-    pub fn field(&self, number: u8) -> Option<FieldValue> {
-        match self.definition.fields.iter().find(|&x| x.number == number) {
-            Some(field_definition) => match parser::take_field(self, field_definition) {
-                Ok((_, field_value)) => Some(field_value),
-                _ => None,
-            },
-            None => None,
+    /// Constructs an iterator over the records (message definitions, messages, and file checksum)
+    /// in the Fit file.
+    fn records(&'buf self) -> Self::RecordIterator {
+        CompleteRecordIterator {
+            parser: CompleteParser::from(self),
         }
     }
-    /// Returns the field specified by `number` iff the field is a scalar `i8`.
-    #[inline(always)]
-    pub fn field_i8(&self, number: u8) -> Option<i8> {
-        match self.field(number) {
-            Some(FieldValue::I8(value)) => Some(value),
-            _ => None,
+    /// Constructs an iterator over all the messages in the Fit file.
+    /// # Example
+    /// ```
+    /// let power_data = fit
+    ///     .messages()
+    ///     .filter_map(|ref message| match message.number() {
+    ///         20 => message.field_u16(7),
+    ///         _ => None
+    ///     })
+    ///     .collect::<Vec<_>>();
+    /// ```
+    fn messages(&'buf self) -> Self::MessageIterator {
+        CompleteMessageIterator {
+            parser: CompleteParser::from(self),
         }
     }
-    /// Returns the field specified by `number` iff the field is a scalar `u8`.
-    #[inline(always)]
-    pub fn field_u8(&self, number: u8) -> Option<u8> {
-        match self.field(number) {
-            Some(FieldValue::U8(value)) => Some(value),
-            _ => None,
-        }
-    }
-    /// Returns the field specified by `number` iff the field is a scalar `i16`.
-    #[inline(always)]
-    pub fn field_i16(&self, number: u8) -> Option<i16> {
-        match self.field(number) {
-            Some(FieldValue::I16(value)) => Some(value),
-            _ => None,
-        }
-    }
-    /// Returns the field specified by `number` iff the field is a scalar `u16`.
-    #[inline(always)]
-    pub fn field_u16(&self, number: u8) -> Option<u16> {
-        match self.field(number) {
-            Some(FieldValue::U16(value)) => Some(value),
-            _ => None,
-        }
-    }
-    /// Returns the field specified by `number` iff the field is a scalar `i32`.
-    #[inline(always)]
-    pub fn field_i32(&self, number: u8) -> Option<i32> {
-        match self.field(number) {
-            Some(FieldValue::I32(value)) => Some(value),
-            _ => None,
-        }
-    }
-    /// Returns the field specified by `number` iff the field is a scalar `u32`.
-    #[inline(always)]
-    pub fn field_u32(&self, number: u8) -> Option<u32> {
-        match self.field(number) {
-            Some(FieldValue::U32(value)) => Some(value),
-            _ => None,
-        }
-    }
-    /// Returns the value of the developer field specified by `number`. If the field number is not
-    /// present, `None` is returned.
-    #[inline(always)]
-    pub fn developer_field(&self, number: u8) -> Option<FieldValue> {
-        match &self.definition.developer_fields {
-            Some(developer_fields) => match developer_fields.iter().find(|&x| x.number == number) {
-                Some(field_definition) => match parser::take_field(self, field_definition) {
-                    Ok((_, field_value)) => Some(field_value),
-                    _ => None,
-                },
-                None => None,
-            },
-            None => None,
-        }
-    }
-    /// Constructs an iterator over all the fields present in the message. Fields are visited in
-    /// the order they appear in the raw data.
-    pub fn fields(&self) -> FieldIterator {
-        FieldIterator {
-            message: self,
-            iterator: self.definition.fields.iter(),
-        }
-    }
-    /// Constructs an iterator over the developer fields present in the message, if any exist.
-    pub fn developer_fields(&self) -> Option<DeveloperFieldIterator> {
-        match &self.definition.developer_fields {
-            Some(fields) => Some(DeveloperFieldIterator {
-                message: self,
-                iterator: fields.iter(),
-            }),
-            None => None,
-        }
+
+    fn parser(&'buf self) -> Self::Parser {
+        CompleteParser::from(self)
     }
 }
 
-impl<'a> From<&'a Fit<'a>> for FitParser<'a> {
-    fn from(fit: &Fit<'a>) -> Self {
+impl<'a> From<&'a CompleteFit<'a>> for CompleteParser<'a> {
+    fn from(fit: &CompleteFit<'a>) -> Self {
         let header_length = fit.header.length as usize;
-        FitParser {
+        CompleteParser {
             data: &fit.data[header_length..], // skip over the header data
             definitions: [
                 None, None, None, None, None, None, None, None, None, None, None, None, None, None,
                 None, None,
             ],
-            start_length: fit.data.len(),
         }
     }
 }
 
-impl<'a> FitParser<'a> {
+impl<'a> FitParser<'a> for CompleteParser<'a> {
     #[inline(always)]
     fn step(&mut self) -> Result<parser::Record<'a>, Error> {
         use parser::RecordType;
@@ -302,7 +162,7 @@ impl<'a> FitParser<'a> {
                     }
                     None => Err(
                         Error::UndefinedLocalType {
-                            position: self.position(),
+                            position: 0,
                             header: header,
                         })
                 }
@@ -318,7 +178,7 @@ impl<'a> FitParser<'a> {
                     },
                     false => Err(
                         Error::InvalidMessageLength {
-                            position: self.position(),
+                            position: 0,
                             header: header,
                             definition: definition
                         }),
@@ -326,13 +186,9 @@ impl<'a> FitParser<'a> {
             }
         }
     }
-
-    fn position(&self) -> usize {
-        self.data.len() - self.start_length
-    }
 }
 
-impl<'a> Iterator for RecordIterator<'a> {
+impl<'a> Iterator for CompleteRecordIterator<'a> {
     type Item = Record<'a>;
     #[inline(always)]
     fn next(&mut self) -> Option<Record<'a>> {
@@ -343,7 +199,7 @@ impl<'a> Iterator for RecordIterator<'a> {
     }
 }
 
-impl<'a> Iterator for MessageIterator<'a> {
+impl<'a> Iterator for CompleteMessageIterator<'a> {
     type Item = Message<'a>;
     #[inline(always)]
     fn next(&mut self) -> Option<Message<'a>> {
@@ -357,30 +213,31 @@ impl<'a> Iterator for MessageIterator<'a> {
     }
 }
 
-impl<'a> Iterator for FieldIterator<'a> {
-    type Item = (FieldDefinition, FieldValue);
-    #[inline]
-    fn next(&mut self) -> Option<(FieldDefinition, FieldValue)> {
-        match self.iterator.next() {
-            Some(field_definition) => match self.message.field(field_definition.number) {
-                Some(field_value) => Some((field_definition.clone(), field_value)),
-                None => None,
-            },
-            None => None,
-        }
-    }
+pub struct ReadParser<'st, R: std::io::Read + 'st> {
+    reader: &'st mut R,
+    buffer: Vec<u8>,
+    parser: CompleteParser<'st>,
 }
 
-impl<'a> Iterator for DeveloperFieldIterator<'a> {
-    type Item = (FieldDefinition, FieldValue);
-    #[inline]
-    fn next(&mut self) -> Option<(FieldDefinition, FieldValue)> {
-        match self.iterator.next() {
-            Some(field_definition) => match self.message.developer_field(field_definition.number) {
-                Some(field_value) => Some((field_definition.clone(), field_value)),
-                None => None,
-            },
-            None => None,
+impl<'a, R: std::io::Read + 'a> FitParser<'a> for ReadParser<'a, R> {
+    fn step(&mut self) -> Result<Record<'a>, Error> {
+        match self.parser.step() {
+            Ok(res) => Ok(res),
+            Err(Error::InsufficientData { required }) => {
+                let mut buf: Vec<u8> = Vec::with_capacity(required);
+                match self.reader.read(&mut buf) {
+                    Ok(_read) => {
+                        self.buffer.append(&mut buf);
+                        return self.step();
+                    }
+                    Err(_) => {
+                        return Err(Error::Unknown);
+                    }
+                }
+            }
+            Err(_) => {
+                return Err(Error::Unknown);
+            }
         }
     }
 }

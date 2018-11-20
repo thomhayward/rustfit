@@ -1,12 +1,13 @@
 extern crate rustfit;
 
 use rustfit::Fit;
+use rustfit::CompleteFit;
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 
-fn calculate_mean_power(fit: &Fit) -> Option<f32> {
+fn calculate_mean_power<'a, F>(fit: &'a F) -> Option<f32> where F: Fit<'a> {
     // 1. Iterate over #20 (record) messages, and extract any power values (field #7)
     let values = fit
         .messages()
@@ -52,7 +53,7 @@ fn main() -> Result<(), Error> {
         let mut file = File::open(&path)?;
         let mut buf: Vec<u8> = Vec::new();
         file.read_to_end(&mut buf)?;
-        match Fit::from_bytes(&buf) {
+        match CompleteFit::from_bytes(&buf) {
             Ok(fit) => {
                 match calculate_mean_power(&fit) {
                     Some(mean) => println!("{:?}: mean power = {:.0} Watts", filename, mean),
