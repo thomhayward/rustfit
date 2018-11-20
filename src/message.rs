@@ -2,12 +2,12 @@ use super::*;
 
 pub struct FieldIterator<'a> {
     message: &'a Message<'a>,
-    iterator: Iter<'a, FieldDefinition>,
+    iterator: std::slice::Iter<'a, FieldDefinition>,
 }
 
 pub struct DeveloperFieldIterator<'a> {
     message: &'a Message<'a>,
-    iterator: Iter<'a, FieldDefinition>,
+    iterator: std::slice::Iter<'a, FieldDefinition>,
 }
 
 impl<'a> Message<'a> {

@@ -8,12 +8,8 @@ mod message;
 mod types;
 
 pub use errors::*;
-pub use types::*;
 pub use message::*;
-
-use crc::crc;
-use std::rc::Rc;
-use std::slice::Iter;
+pub use types::*;
 
 /// Encapsulates a complete Fit file stored in a [u8] slice.
 pub struct Fit<'buf> {
@@ -22,8 +18,8 @@ pub struct Fit<'buf> {
 }
 
 pub struct Parser<'a> {
+    definitions: [Option<std::rc::Rc<MessageDefinition>>; 16],
     data: &'a [u8],
-    definitions: [Option<Rc<MessageDefinition>>; 16],
 }
 
 impl<'a> Fit<'a> {
@@ -31,7 +27,7 @@ impl<'a> Fit<'a> {
     pub fn from_bytes(data: &'a [u8]) -> Result<Self, Error> {
         let (_, header) = parser::take_file_header(data)?;
         if let Some(checksum) = header.checksum {
-            let computed = data[..12].iter().fold(0, crc);
+            let computed = data[..12].iter().fold(0, crc::crc);
             if checksum != computed && checksum != 0 {
                 return Err(Error::HeaderChecksumFailure {
                     found: checksum,
@@ -43,7 +39,7 @@ impl<'a> Fit<'a> {
     }
     /// Computes the end-of-file checksum.
     pub fn checksum(&self) -> u16 {
-        self.data[..(self.data.len() - 2)].iter().fold(0, crc)
+        self.data[..(self.data.len() - 2)].iter().fold(0, crc::crc)
     }
     /// Verifies the end of file checksum.
     pub fn verify(&self) -> bool {
@@ -105,11 +101,11 @@ impl<'a> From<&'a Fit<'a>> for Parser<'a> {
     fn from(fit: &Fit<'a>) -> Self {
         let header_length = fit.header.length as usize;
         Parser {
-            data: &fit.data[header_length..], // skip over the header data
             definitions: [
                 None, None, None, None, None, None, None, None, None, None, None, None, None, None,
                 None, None,
             ],
+            data: &fit.data[header_length..], // skip over the header data
         }
     }
 }
@@ -143,9 +139,9 @@ impl<'a> Parser<'a> {
                 self.data = input;
                 match definition.length <= 255 {
                     true => {
-                        let def = Rc::new(definition);
-                        self.definitions[header.local_type() as usize] = Some(Rc::clone(&def));
-                        Ok(Record::Definition(header, Rc::clone(&def)))
+                        let def = std::rc::Rc::new(definition);
+                        self.definitions[header.local_type() as usize] = Some(std::rc::Rc::clone(&def));
+                        Ok(Record::Definition(header, std::rc::Rc::clone(&def)))
                     },
                     false => Err(
                         Error::InvalidMessageLength {
