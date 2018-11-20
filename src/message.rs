@@ -1,15 +1,20 @@
+//! Methods for accessing message data.
+//!
 use super::*;
 
+/// Iterates over the standard fields in a message.
 pub struct FieldIterator<'a> {
     message: &'a Message<'a>,
     iterator: std::slice::Iter<'a, FieldDefinition>,
 }
 
+/// Iterates over the developer fields in a message.
 pub struct DeveloperFieldIterator<'a> {
     message: &'a Message<'a>,
     iterator: std::slice::Iter<'a, FieldDefinition>,
 }
 
+/// Implements field accessors for [`Message`].
 impl<'a> Message<'a> {
     /// Returns the global message number.
     #[inline(always)]

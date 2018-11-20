@@ -1,3 +1,5 @@
+//! Defines the core types presenting the internal FIT structure.
+
 use nom::Endianness;
 use std::rc::Rc;
 
@@ -47,29 +49,41 @@ impl RecordHeader for u8 {
     }
 }
 
+/// A mandatory header located at the start of every Fit file.
 #[derive(Debug, Clone, Copy)]
 pub struct FileHeader {
+    /// The total length of the header in bytes.
     pub length: u8,
+    /// Protocol version number (see SDK).
     pub protocol: u8,
+    /// Profile version number (see SDK).
     pub profile: u16,
-    pub tag: [u8; 4],
+    /// The length of the data section in bytes (ie. the length of the complete file, minus this
+    /// header and the end-of-file checksum).
     pub file_size: u32,
+    /// ASCII values for ".FIT".
+    pub tag: [u8; 4],
+    /// Optional checksum for this header. Verified if present.
     pub checksum: Option<u16>,
 }
 
+/// Defines the number, data-type, and length of a data field.
 #[derive(Debug, Clone)]
 pub struct FieldDefinition {
     /// Field number; identifies the field.
     pub number: u8,
-    /// The length of the field in bytes. This may be a whold multiple of the intrinsic length of
-    /// the field's data-type, in which case the field is an array of the base data-type.
+    /// The length of the field in bytes. This may be a whole multiple of the intrinsic length of
+    /// the field's data-type, which indicates field is an array of the base data-type.
     pub length: u8,
-    /// A bit-mask identifying the data-type of the field. This implementation only looks at the
-    /// lower 4 bits. The upper 4 bits contain redundant information.
+    /// A bit-mask identifying the data-type of the field.
+    ///
+    /// This implementation only looks at the lower 4 bits. The upper 4 bits contain redundant
+    /// information.
     pub data_type: u8,
-    /// The byte offset at which the field begins in the message data. This is calculatd when
-    /// parsing each message definition. For some reason, this is faster even when only a single
-    /// field is read later on.
+    /// The offset the field begins in the message data.
+    ///
+    /// This is not present in the file, but is calculatd when parsing each message definition.
+    /// For some reason, this is faster even when only a single field is read later on.
     pub offset: usize,
 }
 
@@ -106,6 +120,7 @@ pub enum FieldValue {
     Nil,
 }
 
+/// Defines how an associated data message is formatted.
 #[derive(Debug, Clone)]
 pub struct MessageDefinition {
     /// Reserved byte, read directly from file structure. Should be zero, not enforced.
@@ -128,7 +143,9 @@ pub struct MessageDefinition {
 /// required for reading the fields in the message.
 #[derive(Debug, Clone)]
 pub struct Message<'a> {
+    /// The definition that corresponds to the message.
     pub definition: Rc<MessageDefinition>,
+    /// The unparsed message data.
     pub data: &'a [u8],
 }
 
@@ -137,5 +154,4 @@ pub struct Message<'a> {
 pub enum Record<'a> {
     Definition(u8, Rc<MessageDefinition>),
     Message(u8, Message<'a>),
-    Checksum(u16),
 }

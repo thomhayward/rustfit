@@ -125,17 +125,15 @@ named_args!(
     )
 );
 
-/// Takes a message from the input stream using the supplied message definition. No parsing of the
-/// message content is performed at this time. Will only fail if the input stream is not long
-/// enough for the defined message length.
-pub fn take_message<'a>(input: &'a [u8], definition: &Rc<MessageDefinition>) -> IResult<&'a [u8], Message<'a>> {
+named_args!(
+    pub take_message_data(definition: Rc<MessageDefinition>)<&[u8]>,
+    // We can't borrow `Rc<MessageDefinition>` because of lifetime issues.
     do_parse!(
-        input,
         data: take!(definition.length)
         >>
-        (Message { definition: Rc::clone(&definition), data })
+        (data)
     )
-}
+);
 
 named!(
     pub take_checksum<u16>,
