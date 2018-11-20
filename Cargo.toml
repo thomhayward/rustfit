@@ -1,0 +1,10 @@
+[package]
+name = "rustfit"
+version = "0.1.0"
+authors = ["fe5aeb1f <14987462+fe5aeb1f@users.noreply.github.com>"]
+description = "A fast, low-level parser library for Garmin's .FIT format"
+repository = "https://github.com/fe5aeb1f/rustfit.git"
+publish = false
+
+[dependencies]
+nom = "4.1"
