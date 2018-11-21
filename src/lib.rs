@@ -19,11 +19,11 @@ pub use types::*;
 use std::rc::Rc;
 
 /// Encapsulates a Fit file.
-pub struct Fit<'data> {
+pub struct Fit {
     /// The file header.
     pub header: FileHeader,
     /// The raw file data.
-    pub data: &'data [u8],
+    pub data: Vec<u8>,
     /// The range in `data` which represents the payload.
     payload: std::ops::Range<usize>,
 }
@@ -46,7 +46,7 @@ pub struct MessageIterator<'data> {
     parser: Parser<'data>,
 }
 
-impl<'data> Fit<'data> {
+impl<'data> Fit {
     /// Constructs a new Fit object.
     ///
     /// # Examples
@@ -79,7 +79,7 @@ impl<'data> Fit<'data> {
         // Check that we have sufficient data.
         let payload = std::ops::Range { start: header.length as usize, end: data.len() - 2 };
         match payload.len() == (header.file_size as usize) {
-            true => Ok(Self { header, data, payload }),
+            true => Ok(Self { header, data: data.to_vec(), payload }),
             false => Err(Error::InsufficientData { required: payload.len() })
         }
         // You may also be tempted to validate the end-of-file checksum at this point. Don't!
@@ -152,12 +152,12 @@ impl<'data> Fit<'data> {
     }
 }
 
-impl<'data> From<&'data Fit<'data>> for Parser<'data> {
-    fn from(fit: &Fit<'data>) -> Self {
+impl<'data> From<&'data Fit> for Parser<'data> {
+    fn from(fit: &'data Fit) -> Self {
         Parser {
             definitions: [
-                None, None, None, None, None, None, None, None, None, None, None, None, None, None,
-                None, None,
+                None, None, None, None, None, None, None, None,
+                None, None, None, None, None, None, None, None,
             ],
             data: &fit.data[fit.payload.start..fit.payload.end], // skip over the header data
         }
