@@ -45,10 +45,7 @@ fn main() -> Result<(), Error> {
 
     for argument in args {
         let path = Path::new(&argument);
-        let filename = match path.file_name() {
-            Some(name) => name,
-            None => path.as_os_str(),
-        };
+        let filename = path.file_name().unwrap_or_else(|| path.as_os_str()).to_string_lossy();
         let mut file = File::open(&path)?;
         let mut buf: Vec<u8> = Vec::new();
         file.read_to_end(&mut buf)?;
