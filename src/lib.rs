@@ -276,6 +276,10 @@ impl<'data> From<&'data Fit> for Parser<'data> {
 impl<'a> Parser<'a> {
     #[inline(always)]
     pub fn step(&mut self) -> Result<Record<'a>, Error> {
+        let remaining = self.data.len();
+        if remaining == 0 {
+            return Err(Error::EndOfInput);
+        }
         let (input, header) = parser::take_record_header(self.data)?;
         match header.record_type() {
             RecordType::Data => {
