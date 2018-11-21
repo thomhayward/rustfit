@@ -50,7 +50,7 @@ impl RecordHeader for u8 {
 }
 
 /// A mandatory header located at the start of every Fit file.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct FileHeader {
     /// The total length of the header in bytes.
     pub length: u8,
@@ -68,7 +68,7 @@ pub struct FileHeader {
 }
 
 /// Defines the number, data-type, and length of a data field.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FieldDefinition {
     /// Field number; identifies the field.
     pub number: u8,
@@ -121,7 +121,7 @@ pub enum FieldValue {
 }
 
 /// Defines how an associated data message is formatted.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct MessageDefinition {
     /// Reserved byte, read directly from file structure. Should be zero, not enforced.
     pub reserved: u8,
@@ -141,7 +141,7 @@ pub struct MessageDefinition {
 
 /// Encapsulates a data message and its associated message definition. The message definition is
 /// required for reading the fields in the message.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Message<'a> {
     /// The definition that corresponds to the message.
     pub definition: Rc<MessageDefinition>,
@@ -150,8 +150,19 @@ pub struct Message<'a> {
 }
 
 /// Encapsulates the three high-level data structures in a Fit file, excluding the file header.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Record<'a> {
     Definition(u8, Rc<MessageDefinition>),
     Message(u8, Message<'a>),
+}
+
+impl PartialEq for MessageDefinition {
+    fn eq(&self, other: &MessageDefinition) -> bool {
+        self.reserved == other.reserved &&
+        self.number == other.number &&
+        self.length == other.length &&
+        self.byte_order == other.byte_order &&
+        self.fields.iter().zip(other.fields.iter()).all(|(a, b)| a == b) &&
+        self.developer_fields.iter().zip(other.developer_fields.iter()).all(|(a, b)| a == b)
+    }
 }
