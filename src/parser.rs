@@ -15,25 +15,17 @@ pub const ERROR_UTF8_ERROR: u32 = 3;
 
 // Consumes a file header.
 pub fn take_file_header(input: &[u8]) -> IResult<&[u8], FileHeader> {
-    let (input, size) = le_u8(input)?;
+    use nom::combinator::{cond, verify};
+    use nom::bytes::streaming::tag;
+    let (input, length) = verify(le_u8, |&val: &u8| val == 12 || val == 14)(input)?;
     let (input, protocol) = le_u8(input)?;
     let (input, profile) = le_u16(input)?;
     let (input, file_size) = le_u32(input)?;
-    let (input, _) = nom::bytes::complete::take(4usize)(input)?;
-    let (input, checksum) = match size {
-        14 => {
-            let (input, chk) = le_u16(input)?;
-            (input, Some(chk))
-        },
-        _ => (input, None)
-    };
+    let (input, fit_tag) = tag(".FIT")(input)?;
+    let (input, checksum) = cond(length == 14, le_u16)(input)?;
     Ok((input, FileHeader {
-        length: size,
-        protocol: protocol,
-        profile: profile,
-        tag: [b'.', b'F', b'I', b'T'],
-        file_size: file_size,
-        checksum: checksum
+        length, protocol, profile, tag: [fit_tag[0], fit_tag[1], fit_tag[2], fit_tag[3]],
+        file_size, checksum
     }))
 }
 
