@@ -57,14 +57,10 @@ pub fn take_file_header(input: &[u8]) -> IResult<&[u8], FileHeader> {
 //     )
 // );
 
-named!(
-    pub take_record_header<u8>,
-    do_parse!(
-        byte: le_u8
-        >>
-        (byte)
-    )
-);
+#[inline(always)]
+pub fn take_record_header(input: &[u8]) -> IResult<&[u8], u8> {
+    le_u8(input)
+}
 
 pub fn take_field_definition(input: &[u8]) -> IResult<&[u8], (u8, u8, u8)> {
     // TODO: Verify first byte != 255
