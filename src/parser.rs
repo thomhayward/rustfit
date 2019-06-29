@@ -62,22 +62,14 @@ pub fn take_record_header(input: &[u8]) -> IResult<&[u8], u8> {
     le_u8(input)
 }
 
+#[inline(always)]
 pub fn take_field_definition(input: &[u8]) -> IResult<&[u8], (u8, u8, u8)> {
-    // TODO: Verify first byte != 255
-    nom::sequence::tuple((le_u8, le_u8, le_u8))(input)
+    // Field Definition: (field_number: u8, length: u8, data_type: u8)
+    // - field_number should not equal 255
+    use nom::combinator::verify;
+    use nom::sequence::tuple;
+    tuple((verify(le_u8, |fnum: &u8| *fnum != 255), le_u8, le_u8))(input)
 }
-
-
-// named!(
-//     pub take_field_definition<(u8, u8, u8)>,
-//     do_parse!(
-//         number: verify!(le_u8, |val:u8| val != 255) >>
-//         length: le_u8 >>
-//         data_type: le_u8
-//         >>
-//         (number, length, data_type)
-//     )
-// );
 
 pub fn take_byteorder(input: &[u8]) -> IResult<&[u8], Endianness> {
     match le_u8(input)? {
