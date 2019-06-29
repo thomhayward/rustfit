@@ -14,7 +14,7 @@ pub const ERROR_HEADER_TAG: u32 = 1;
 pub const ERROR_INVALID_BYTE_ORDER: u32 = 2;
 pub const ERROR_UTF8_ERROR: u32 = 3;
 
-/// Consumes a file header.
+// Consumes a file header.
 named!(pub take_file_header<FileHeader>,
     do_parse!(
         size: add_return_error!(ErrorKind::Custom(ERROR_HEADER_SIZE), verify!(le_u8, |val:u8| val == 12 || val == 14)) >>
