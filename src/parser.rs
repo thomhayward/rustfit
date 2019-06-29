@@ -2,7 +2,6 @@ use nom::number::Endianness;
 use nom::number::complete::{be_f32, be_f64, le_f32, le_f64, le_i8, le_u16, le_u32, le_u8};
 use nom::IResult;
 use std::borrow::Borrow;
-use std::rc::Rc;
 use super::types::*;
 
 macro_rules! f32 ( ($i:expr, $e:expr) => ( {if Endianness::Big == $e { be_f32($i) } else { le_f32($i) } } ););
@@ -13,7 +12,14 @@ pub const ERROR_HEADER_TAG: u32 = 1;
 pub const ERROR_INVALID_BYTE_ORDER: u32 = 2;
 pub const ERROR_UTF8_ERROR: u32 = 3;
 
-// Consumes a file header.
+/// Consumes a file header.
+///
+/// Will reject under the following conditions:
+///   - Field header length does not equal 12 or 14 bytes
+///   - File tag does not equal '.FIT'
+///
+/// The header checksum is not verified.
+///
 pub fn take_file_header(input: &[u8]) -> IResult<&[u8], FileHeader> {
     use nom::combinator::{cond, verify};
     use nom::bytes::streaming::tag;
