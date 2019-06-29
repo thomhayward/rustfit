@@ -98,7 +98,14 @@ impl<'data> Fit {
     ///
     pub fn from_bytes(data: &'data [u8]) -> Result<Self, Error> {
 
-        let (payload, header) = parser::take_file_header(data)?;
+        use nom::error::ErrorKind;
+
+        let (payload, header) = match parser::take_file_header(data) {
+            Ok((p, h)) => (p, h),
+            Err(nom::Err::Error((i, ErrorKind::Verify))) => return Err(Error::InvalidHeaderSize(i.to_vec())),
+            Err(nom::Err::Error((i, ErrorKind::Tag))) => return Err(Error::InvalidHeaderTag(i.to_vec())),
+            Err(_) => return Err(Error::Unknown)
+        };
 
         // If the header checksum is present, verify it.
         if let Some(checksum) = header.checksum {
@@ -376,13 +383,19 @@ impl<'a> Parser<'a> {
         if remaining == 0 {
             return Err(Error::EndOfInput);
         }
-        let (input, header) = parser::take_record_header(self.data)?;
+        let (input, header) = match parser::take_record_header(self.data) {
+            Ok((i, h)) => (i, h),
+            Err(_) => return Err(Error::Unknown)
+        };
         match header.record_type() {
             RecordType::Data => {
                 let ref definition = self.definitions[header.local_type() as usize];
                 match definition {
                     Some(ref def) => {
-                        let (input, message) = parser::take_message_data(input, Rc::clone(def))?;
+                        let (input, message) = match parser::take_message_data(def.length)(input) {
+                            Ok((i, m)) => (i, m),
+                            Err(_) => return Err(Error::Unknown)
+                        };
                         self.data = input;
                         self.position += remaining - input.len();
                         Ok(Record::Message(header, Message {
@@ -398,7 +411,10 @@ impl<'a> Parser<'a> {
                 }
             }
             RecordType::Definition => {
-                let (input, definition) = parser::take_message_definition(input, header)?;
+                let (input, definition) = match parser::take_message_definition(header)(input) {
+                    Ok((i, d)) => (i, d),
+                    Err(_) => return Err(Error::Unknown)
+                };
                 self.data = input;
                 match definition.length <= 255 {
                     true => {

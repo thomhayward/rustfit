@@ -7,4 +7,4 @@ repository = "https://github.com/fe5aeb1f/rustfit.git"
 publish = false
 
 [dependencies]
-nom = "4.1"
+nom = "^5"
