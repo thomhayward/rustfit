@@ -1,6 +1,6 @@
 //! Defines the core types presenting the internal FIT structure.
 
-use nom::Endianness;
+use nom::number::Endianness;
 use std::borrow::Cow;
 use std::rc::Rc;
 

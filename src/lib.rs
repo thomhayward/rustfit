@@ -98,7 +98,8 @@ impl<'data> Fit {
     ///
     pub fn from_bytes(data: &'data [u8]) -> Result<Self, Error> {
 
-        let (payload, header) = parser::take_file_header(data)?;
+        // TODO: Handle the error! Remove the .unwrap()!
+        let (payload, header) = parser::take_file_header(data).unwrap();
 
         // If the header checksum is present, verify it.
         if let Some(checksum) = header.checksum {
@@ -376,13 +377,15 @@ impl<'a> Parser<'a> {
         if remaining == 0 {
             return Err(Error::EndOfInput);
         }
-        let (input, header) = parser::take_record_header(self.data)?;
+        // TODO: Handle the error! Remove the .unwrap()!
+        let (input, header) = parser::take_record_header(self.data).unwrap();
         match header.record_type() {
             RecordType::Data => {
                 let ref definition = self.definitions[header.local_type() as usize];
                 match definition {
                     Some(ref def) => {
-                        let (input, message) = parser::take_message_data(input, Rc::clone(def))?;
+                        // TODO: Handle the error! Remove the .unwrap()!
+                        let (input, message) = parser::take_message_data(input, Rc::clone(def)).unwrap();
                         self.data = input;
                         self.position += remaining - input.len();
                         Ok(Record::Message(header, Message {
@@ -398,7 +401,8 @@ impl<'a> Parser<'a> {
                 }
             }
             RecordType::Definition => {
-                let (input, definition) = parser::take_message_definition(input, header)?;
+                // TODO: Handle the error! Remove the .unwrap()!
+                let (input, definition) = parser::take_message_definition(input, header).unwrap();
                 self.data = input;
                 match definition.length <= 255 {
                     true => {
