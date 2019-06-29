@@ -35,26 +35,6 @@ pub fn take_file_header(input: &[u8]) -> IResult<&[u8], FileHeader> {
     }))
 }
 
-// named!(pub take_file_header<FileHeader>,
-//     do_parse!(
-//         size: add_return_error!(ErrorKind::Custom(ERROR_HEADER_SIZE), verify!(le_u8, |val:u8| val == 12 || val == 14)) >>
-//         protocol: le_u8 >>
-//         profile: le_u16 >>
-//         file_size: le_u32 >>
-//         tag: add_return_error!(ErrorKind::Custom(ERROR_HEADER_TAG), tag!(".FIT")) >>
-//         checksum: cond!(size == 14, le_u16)
-//         >>
-//         (FileHeader {
-//             length: size,
-//             protocol,
-//             profile,
-//             tag: [tag[0], tag[1], tag[2], tag[3]],
-//             file_size,
-//             checksum
-//         })
-//     )
-// );
-
 #[inline(always)]
 pub fn take_record_header(input: &[u8]) -> IResult<&[u8], u8> {
     le_u8(input)
@@ -99,44 +79,40 @@ pub fn process_field_definitions(
         }).collect::<Vec<_>>()
 }
 
-named_args!(
-    pub take_message_definition(header: u8)<MessageDefinition>,
-    do_parse!(
-        reserved: le_u8 >>
-        byte_order: take_byteorder >>
-        number: u16!(byte_order) >>
-        count: le_u8 >>
-        fields: count!(take_field_definition, count as usize) >>
-        developer_fields: cond!(
-            header.developer(),
-            do_parse!(
-                dev_count: le_u8 >>
-                dev_fields: count!(take_field_definition, dev_count as usize)
-                >>
-                (dev_fields)
-            )
-        )
-        >>
-        ({
-            let base_field_length = fields.iter().fold(0, |a, &(_, length, _)| a + (length as usize));
-            let devl_field_length = match &developer_fields {
-                Some(fields) => fields.iter().fold(0, |a, &(_, length, _)| a + (length as usize)),
-                None => 0
-            };
-            MessageDefinition {
-                reserved,
-                number,
-                length: base_field_length + devl_field_length,
-                byte_order,
-                fields: process_field_definitions(&fields, 0),
-                developer_fields: match &developer_fields {
-                    Some(fields) => Some(process_field_definitions(&fields, base_field_length)),
-                    None => None
-                }
+#[inline]
+pub fn take_message_definition(header: u8) -> impl Fn(&[u8]) -> IResult<&[u8], MessageDefinition> {
+    #[inline] // (always) is slower
+    fn take_field_def_block(input: &[u8]) -> IResult<&[u8], Vec<(u8, u8, u8)>> {
+        use nom::multi::count;
+        let (input, c) = le_u8(input)?;
+        count(take_field_definition, c as usize)(input)
+    }
+    move |input: &[u8]| {
+        use nom::combinator::cond;
+        let (input, reserved) = le_u8(input)?;
+        let (input, byte_order) = take_byteorder(input)?;
+        let (input, number) = u16!(input, byte_order)?;
+        let (input, fields) = take_field_def_block(input)?;
+        let (input, developer_fields) = cond(header.developer(), take_field_def_block)(input)?;
+        //
+        let base_field_length = fields.iter().fold(0, |a, &(_, length, _)| a + (length as usize));
+        let devl_field_length = match &developer_fields {
+            Some(fields) => fields.iter().fold(0, |a, &(_, length, _)| a + (length as usize)),
+            None => 0
+        };
+        Ok((input, MessageDefinition {
+            reserved,
+            number,
+            length: base_field_length + devl_field_length,
+            byte_order,
+            fields: process_field_definitions(&fields, 0),
+            developer_fields: match &developer_fields {
+                Some(fields) => Some(process_field_definitions(&fields, base_field_length)),
+                None => None
             }
-        })
-    )
-);
+        }))
+    }
+}
 
 #[inline(always)]
 pub fn take_message_data(length: usize) -> impl Fn(&[u8]) -> IResult<&[u8], &[u8]> {

@@ -402,7 +402,7 @@ impl<'a> Parser<'a> {
             }
             RecordType::Definition => {
                 // TODO: Handle the error! Remove the .unwrap()!
-                let (input, definition) = parser::take_message_definition(input, header).unwrap();
+                let (input, definition) = parser::take_message_definition(header)(input).unwrap();
                 self.data = input;
                 match definition.length <= 255 {
                     true => {
