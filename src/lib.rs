@@ -385,7 +385,7 @@ impl<'a> Parser<'a> {
                 match definition {
                     Some(ref def) => {
                         // TODO: Handle the error! Remove the .unwrap()!
-                        let (input, message) = parser::take_message_data(input, Rc::clone(def)).unwrap();
+                        let (input, message) = parser::take_message_data(def.length)(input).unwrap();
                         self.data = input;
                         self.position += remaining - input.len();
                         Ok(Record::Message(header, Message {

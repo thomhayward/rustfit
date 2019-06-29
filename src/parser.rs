@@ -132,24 +132,17 @@ named_args!(
     )
 );
 
-named_args!(
-    pub take_message_data(definition: Rc<MessageDefinition>)<&[u8]>,
-    // We can't borrow `Rc<MessageDefinition>` because of lifetime issues.
-    do_parse!(
-        data: take!(definition.length)
-        >>
-        (data)
-    )
-);
+#[inline(always)]
+pub fn take_message_data(length: usize) -> impl Fn(&[u8]) -> IResult<&[u8], &[u8]> {
+    move |input: &[u8]| {
+        nom::bytes::streaming::take(length)(input)
+    }
+}
 
-named!(
-    pub take_checksum<u16>,
-    do_parse!(
-        chk: le_u16
-        >>
-        (chk)
-    )
-);
+#[inline(always)]
+pub fn take_checksum(input: &[u8]) -> IResult<&[u8], u16> {
+    le_u16(input)
+}
 
 /// Returns a field from `message` using the supplied field definition. Note that the whether
 /// `field_definition` is valid for the message is not checked.
