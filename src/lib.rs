@@ -1,6 +1,9 @@
 //! A fast, low-level parser library for Garmin's .FIT format.
 //!
-//! This parser is lazy!
+//! ## This parser is lazy!
+//! Scanning though a .FIT file with this library is designed to be as cheap as possible. The
+//! parser avoids copying data as much as possible. Data messages are returned as slice
+//! references, and message fields are only parsed if you attempt to read them.
 
 #[macro_use]
 extern crate nom;
@@ -16,16 +19,19 @@ pub use errors::*;
 pub use message::*;
 pub use types::*;
 
+use std::borrow::Cow;
 use std::rc::Rc;
 
 /// Encapsulates a Fit file.
 pub struct Fit {
-    /// The file header.
+    /// FIT file header.
     pub header: FileHeader,
-    /// The raw file data.
-    pub data: Vec<u8>,
-    /// The range in `data` which represents the payload.
-    payload: std::ops::Range<usize>,
+    /// CRC of the header bytes. This is not the same as header.checksum!
+    header_checksum: u16,
+    /// Payload data (definition records and data records).
+    payload: Vec<u8>,
+    ///
+    checksum_bytes: Option<Vec<u8>>,
 }
 
 /// Manages parser state.
@@ -38,6 +44,7 @@ pub struct Fit {
 /// [`messages()`]: struct.Fit.html#method.messages
 pub struct Parser<'data> {
     definitions: [Option<Rc<MessageDefinition>>; 16],
+    position: usize,
     data: &'data [u8],
 }
 
@@ -58,11 +65,25 @@ impl<'data> Fit {
     /// let bytes = include_bytes!("../samples/sample01.fit");
     /// let fit = Fit::from_bytes(bytes)?;
     ///
-    /// assert_eq!(133688, fit.data.len());
+    /// assert_eq!(3899, fit.messages().count());
     /// # Ok(())
     /// # }
     /// ```
     ///
+    /// An incomplete file can be accepted:
+    /// ```
+    /// # fn main() -> Result<(), rustfit::Error> {
+    /// use rustfit::Fit;
+    /// let bytes = include_bytes!("../samples/sample01.fit");
+    /// let fit = Fit::from_bytes(&bytes[..1034])?;
+    ///
+    /// assert_eq!(11, fit.messages().count());
+    /// assert_eq!(false, fit.verify_checksum());
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// Attempting to load some random bytes will fail with an `Err`:
     /// ```
     /// # fn main() -> Result<(), rustfit::Error> {
     /// use rustfit::Fit;
@@ -76,7 +97,9 @@ impl<'data> Fit {
     /// ```
     ///
     pub fn from_bytes(data: &'data [u8]) -> Result<Self, Error> {
-        let (_, header) = parser::take_file_header(data)?;
+
+        let (payload, header) = parser::take_file_header(data)?;
+
         // If the header checksum is present, verify it.
         if let Some(checksum) = header.checksum {
             let computed = data[..12].iter().fold(0, crc);
@@ -84,13 +107,41 @@ impl<'data> Fit {
                 return Err(Error::HeaderChecksumFailure { found: checksum, computed });
             }
         }
+
+        // Calculate the checksum of *all* the bytes in the header. In most cases, this will
+        // return 0. This is not the same calculation performed above.
+        let header_checksum = data[..(header.length as usize)].iter().fold(0, crc);
+
         // Check that we have sufficient data.
-        let payload = std::ops::Range { start: header.length as usize, end: data.len() - 2 };
-        match payload.len() == (header.file_size as usize) {
-            true => Ok(Self { header, data: data.to_vec(), payload }),
-            false => Err(Error::InsufficientData { required: payload.len() })
+        let declared_length = header.file_size as usize;
+        let actual_length = payload.len() - 2; // payload contains everything after the header.
+        //
+        use std::cmp::Ordering;
+        match declared_length.cmp(&actual_length) {
+            // We've been given either the exact amount of data, or more data than the header
+            // thinks we should have.
+            Ordering::Less | Ordering::Equal => {
+                Ok(Fit {
+                    header,
+                    header_checksum,
+                    payload: payload[..declared_length].to_vec(),
+                    checksum_bytes: Some(payload[declared_length..(declared_length + 2)].to_vec()),
+                })
+            },
+            // We've been given less data than the header claims we should have. The file is
+            // incomplete.
+            Ordering::Greater => {
+                Ok(Fit {
+                    header,
+                    header_checksum,
+                    payload: payload.to_vec(),
+                    checksum_bytes: None,
+                })
+            },
         }
+
         // You may also be tempted to validate the end-of-file checksum at this point. Don't!
+
     }
     /// Computes the end-of-file [checksum].
     ///
@@ -100,14 +151,14 @@ impl<'data> Fit {
     /// let bytes = include_bytes!("../samples/sample01.fit");
     /// let fit = rustfit::Fit::from_bytes(bytes)?;
     ///
-    /// assert_eq!(fit.checksum(), 0x0cc8);
+    /// assert_eq!(fit.compute_checksum(), 0x0cc8);
     /// # Ok(())
     /// # }
     /// ```
     ///
     /// [checksum]: fn.crc.html
-    pub fn checksum(&self) -> u16 {
-        self.data[..self.payload.end].iter().fold(0, crc)
+    pub fn compute_checksum(&self) -> u16 {
+        self.payload.iter().fold(self.header_checksum, crc)
     }
     /// Verifies the end of file [checksum].
     ///
@@ -124,10 +175,17 @@ impl<'data> Fit {
     ///
     /// [checksum]: fn.crc.html
     pub fn verify_checksum(&self) -> bool {
-        let bytes = &self.data[self.payload.end..];
-        assert_eq!(bytes.len(), 2, "Last two bytes of data is not 2 bytes long");
-        let checksum = (bytes[0] as u16) | ((bytes[1] as u16) << 8);
-        checksum == self.checksum()
+        match self.checksum_bytes {
+            Some(ref bytes) => {
+                match parser::take_checksum(&bytes) {
+                    Ok((_, checksum)) => {
+                        checksum == self.compute_checksum()
+                    },
+                    _ => false
+                }
+            }
+            _ => false
+        }
     }
     /// Constructs a new parser for the Fit file.
     pub fn parser(&'data self) -> Parser<'data> {
@@ -182,13 +240,13 @@ impl Default for Fit {
     ///
     /// let fit = Fit::default();
     /// assert_eq!(fit.header, FileHeader::default());
-    /// assert_eq!(fit.checksum(), 0x0000);
+    /// assert_eq!(fit.compute_checksum(), 0x0000);
     /// assert_eq!(fit.verify_checksum(), false);
     ///
     /// let mut parser = fit.parser();
-    /// assert_eq!(1, match parser.step() {
-    ///     Err(Error::InsufficientData { required }) => required,
-    ///     _ => usize::max_value(),
+    /// assert_eq!(true, match parser.step() {
+    ///     Err(Error::EndOfInput) => true,
+    ///     _ => false,
     /// });
     ///
     /// assert_eq!(None, parser.next());
@@ -207,46 +265,47 @@ impl Default for Fit {
     fn default() -> Self {
         Fit {
             header: FileHeader::default(),
-            data: vec![255, 255],
-            payload: (0..0),
+            header_checksum: 0,
+            payload: Vec::new(),
+            checksum_bytes: None,
         }
     }
 }
 
-/// Creates a [`Fit`] from any type that implements [`Read`]
-///
-/// # Examples
-/// ```
-/// # fn main() -> Result<(), rustfit::Error> {
-/// use std::path::Path;
-/// use std::fs::File;
-/// let path = Path::new("samples/sample01.fit");
-/// let mut file = File::open(&path).expect("Error opening file");
-/// let fit = rustfit::Fit::from(&mut file);
-///
-/// assert!(fit.verify_checksum());
-/// # Ok(())
-/// # }
-/// ```
-///
-/// On failure, a default [`Fit`] structure is returned:
-/// ```
-/// # fn main() -> Result<(), rustfit::Error> {
-/// use std::path::Path;
-/// use std::fs::File;
-/// let path = Path::new("samples/randombytes.fit");
-/// let mut file = File::open(&path).expect("Error opening file");
-/// let fit = rustfit::Fit::from(&mut file);
-///
-/// assert_ne!(fit.verify_checksum(), true, "Checksum should not be valid!");
-/// assert_eq!(fit.header.length, 0);
-/// # Ok(())
-/// # }
-/// ```
-///
-/// [`Fit`]: struct.Fit.html
-/// [`Read`]: http://doc.rust-lang.org/std/os/trait.Read.html
 impl<'a, T> From<&'a mut T> for Fit where T: std::io::Read {
+    /// Creates a [`Fit`] from any type that implements [`Read`]
+    ///
+    /// # Examples
+    /// ```
+    /// # fn main() -> Result<(), rustfit::Error> {
+    /// use std::path::Path;
+    /// use std::fs::File;
+    /// let path = Path::new("samples/sample01.fit");
+    /// let mut file = File::open(&path).expect("Error opening file");
+    /// let fit = rustfit::Fit::from(&mut file);
+    ///
+    /// assert!(fit.verify_checksum());
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// On failure, a default [`Fit`] structure is returned:
+    /// ```
+    /// # fn main() -> Result<(), rustfit::Error> {
+    /// use std::path::Path;
+    /// use std::fs::File;
+    /// let path = Path::new("samples/randombytes.fit");
+    /// let mut file = File::open(&path).expect("Error opening file");
+    /// let fit = rustfit::Fit::from(&mut file);
+    ///
+    /// assert_ne!(fit.verify_checksum(), true, "Checksum should not be valid!");
+    /// assert_eq!(fit.header.length, 0);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// [`Fit`]: struct.Fit.html
+    /// [`Read`]: http://doc.rust-lang.org/std/os/trait.Read.html
     fn from(from: &'a mut T) -> Self {
         let mut buffer: Vec<u8> = Vec::new();
         match from.read_to_end(&mut buffer) {
@@ -268,7 +327,44 @@ impl<'data> From<&'data Fit> for Parser<'data> {
                 None, None, None, None, None, None, None, None,
                 None, None, None, None, None, None, None, None,
             ],
-            data: &fit.data[fit.payload.start..fit.payload.end], // skip over the header data
+            position: 0,
+            data: &fit.payload
+        }
+    }
+}
+
+impl<'data> From<&'data [u8]> for Parser<'data> {
+    /// Initialises a `Parser` from a `u8` slice. `Parser` does not handle the file header,
+    /// `from` must only contain the .FIT payload.
+    ///
+    /// ```
+    /// # fn try_main() -> Result<(), rustfit::Error> {
+    /// use rustfit::{Parser, Record};
+    ///
+    /// let bytes: Vec<u8> = vec![0x40, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x2a];
+    /// let mut parser = Parser::from(&bytes[..]);
+    ///
+    /// if let Record::Definition(header, definition) = parser.step()? {
+    ///     assert_eq!(0x40, header);
+    ///     assert_eq!(1, definition.length);
+    /// }
+    ///
+    /// if let Record::Message(_, message) = parser.step()? {
+    ///     assert_eq!(Some(42), message.field_u8(0));
+    ///     assert_eq!(1, message.fields().count());
+    /// }
+    ///
+    /// # Ok(())
+    /// # }
+    /// ```
+    fn from(from: &'data [u8]) -> Self {
+        Parser {
+            definitions: [
+                None, None, None, None, None, None, None, None,
+                None, None, None, None, None, None, None, None,
+            ],
+            position: 0,
+            data: from,
         }
     }
 }
@@ -288,14 +384,15 @@ impl<'a> Parser<'a> {
                     Some(ref def) => {
                         let (input, message) = parser::take_message_data(input, Rc::clone(def))?;
                         self.data = input;
+                        self.position += remaining - input.len();
                         Ok(Record::Message(header, Message {
                             definition: Rc::clone(def),
-                            data: message,
+                            data: Cow::Borrowed(message),
                         }))
                     }
                     None => Err(
                         Error::UndefinedLocalType {
-                            position: 0,
+                            position: self.position,
                             header: header,
                         })
                 }
@@ -307,11 +404,12 @@ impl<'a> Parser<'a> {
                     true => {
                         let def = Rc::new(definition);
                         self.definitions[header.local_type() as usize] = Some(Rc::clone(&def));
+                        self.position += remaining - input.len();
                         Ok(Record::Definition(header, Rc::clone(&def)))
                     },
                     false => Err(
                         Error::InvalidMessageLength {
-                            position: 0,
+                            position: self.position,
                             header: header,
                             definition: definition
                         }),
@@ -340,7 +438,7 @@ impl<'data> Iterator for MessageIterator<'data> {
             match self.parser.step() {
                 Ok(Record::Message(_, message)) => return Some(message),
                 Ok(Record::Definition(_, _)) => continue,
-                _ => return None,
+                Err(_) => return None,
             }
         }
     }

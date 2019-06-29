@@ -1,6 +1,7 @@
 //! Defines the core types presenting the internal FIT structure.
 
 use nom::Endianness;
+use std::borrow::Cow;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -146,7 +147,7 @@ pub struct Message<'a> {
     /// The definition that corresponds to the message.
     pub definition: Rc<MessageDefinition>,
     /// The unparsed message data.
-    pub data: &'a [u8],
+    pub data: Cow<'a, [u8]>,
 }
 
 /// Encapsulates the three high-level data structures in a Fit file, excluding the file header.

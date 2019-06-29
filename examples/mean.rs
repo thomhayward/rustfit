@@ -52,8 +52,8 @@ fn main() -> Result<(), Error> {
         match Fit::from_bytes(&buf) {
             Ok(fit) => {
                 match calculate_mean_power(&fit) {
-                    Some(mean) => println!("{:?}: mean power = {:.0} Watts", filename, mean),
-                    None => println!("{:?}: no power data", filename),
+                    Some(mean) => println!("{}: mean power = {:.0} Watts", filename, mean),
+                    None => println!("{}: no power data", filename),
                 }
             },
             Err(error) => {

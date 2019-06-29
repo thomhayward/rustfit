@@ -2,6 +2,7 @@ use nom::{
     be_f32, be_f64, le_f32, le_f64, le_i8, le_u16, le_u32, le_u8, Context::Code, Endianness,
     Err::Failure, ErrorKind::Custom, IResult,
 };
+use std::borrow::Borrow;
 use std::rc::Rc;
 use super::types::*;
 
@@ -158,7 +159,8 @@ pub fn take_field<'a>(message: &'a Message, field_definition: &FieldDefinition) 
     const I64_MAX: i64 = i64::max_value();
     //
     let endianness = message.definition.byte_order;
-    let (input, _) = take!(message.data, field_definition.offset)?;
+    let data: &[u8] = message.data.borrow();
+    let (input, _) = take!(data, field_definition.offset)?;
     //
     match field_definition.data_type & 0x0f {
         0 | 2 | 13 => {
