@@ -71,24 +71,14 @@ pub fn take_field_definition(input: &[u8]) -> IResult<&[u8], (u8, u8, u8)> {
     tuple((verify(le_u8, |fnum: &u8| *fnum != 255), le_u8, le_u8))(input)
 }
 
+#[inline(always)]
 pub fn take_byteorder(input: &[u8]) -> IResult<&[u8], Endianness> {
-    match le_u8(input)? {
+    use nom::combinator::verify;
+    match verify(le_u8, |&val: &u8| val == 0 || val == 1)(input)? {
         (i, 0) => Ok((i, Endianness::Little)),
-        // TODO: Explicityly match for '0'. Return error for anything else.
         (i, _) => Ok((i, Endianness::Big))
     }
 }
-
-// named!(
-//     pub take_byteorder<Endianness>,
-//     do_parse!(
-//         raw: add_return_error!(
-//             ErrorKind::Custom(ERROR_INVALID_BYTE_ORDER),
-//             verify!(le_u8, |val:u8| val == 0 || val == 1))
-//         >>
-//         (match raw { 0 => Endianness::Little, _ => Endianness::Big })
-//     )
-// );
 
 /// Takes a slice of raw field definitions, and calculates the offset at which each field will
 /// occur in corresponding messages.
