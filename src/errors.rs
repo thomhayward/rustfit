@@ -4,8 +4,8 @@ use super::*;
 pub enum Error {
 
     /// The length of the file header is not supported. Should be either 12 or 14 bytes.
-    InvalidHeaderSize { found: u8 },
-    InvalidHeaderTag { found: Vec<u8>, expected: Vec<u8> },
+    InvalidHeaderSize(Vec<u8>),
+    InvalidHeaderTag(Vec<u8>),
     HeaderChecksumFailure { found: u16, computed: u16 },
 
     /// The parser encountered a data message bound to a local-type that does not have an

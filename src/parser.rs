@@ -7,11 +7,6 @@ use super::types::*;
 macro_rules! f32 ( ($i:expr, $e:expr) => ( {if Endianness::Big == $e { be_f32($i) } else { le_f32($i) } } ););
 macro_rules! f64 ( ($i:expr, $e:expr) => ( {if Endianness::Big == $e { be_f64($i) } else { le_f64($i) } } ););
 
-pub const ERROR_HEADER_SIZE: u32 = 0;
-pub const ERROR_HEADER_TAG: u32 = 1;
-pub const ERROR_INVALID_BYTE_ORDER: u32 = 2;
-pub const ERROR_UTF8_ERROR: u32 = 3;
-
 /// Consumes a file header.
 ///
 /// Will reject under the following conditions:
