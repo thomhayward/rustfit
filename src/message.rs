@@ -27,7 +27,7 @@ impl<'a> Message<'a> {
     #[inline(always)]
     pub fn field(&self, number: u8) -> Option<FieldValue> {
         match self.definition.fields.iter().find(|&x| x.number == number) {
-            Some(field_definition) => match parser::take_field(self, field_definition) {
+            Some(field_definition) => match parser::take_field(field_definition)(self) {
                 Ok((_, field_value)) => Some(field_value),
                 _ => None,
             },
@@ -88,7 +88,7 @@ impl<'a> Message<'a> {
     pub fn developer_field(&self, number: u8) -> Option<FieldValue> {
         match &self.definition.developer_fields {
             Some(developer_fields) => match developer_fields.iter().find(|&x| x.number == number) {
-                Some(field_definition) => match parser::take_field(self, field_definition) {
+                Some(field_definition) => match parser::take_field(field_definition)(self) {
                     Ok((_, field_value)) => Some(field_value),
                     _ => None,
                 },
