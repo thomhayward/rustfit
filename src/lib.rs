@@ -102,8 +102,11 @@ impl<'data> Fit {
 
         let (payload, header) = match parser::take_file_header(data) {
             Ok((p, h)) => (p, h),
-            Err(nom::Err::Error((i, ErrorKind::Verify))) => return Err(Error::InvalidHeaderSize(i.to_vec())),
-            Err(nom::Err::Error((i, ErrorKind::Tag))) => return Err(Error::InvalidHeaderTag(i.to_vec())),
+            Err(nom::Err::Error(nom::error::Error { input, code })) => match code {
+                ErrorKind::Verify => return Err(Error::InvalidHeaderSize(input.to_vec())),
+                ErrorKind::Tag => return Err(Error::InvalidHeaderTag(input.to_vec())),
+                _ => return Err(Error::Unknown)
+            },
             Err(_) => return Err(Error::Unknown)
         };
 

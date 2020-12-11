@@ -7,4 +7,8 @@ repository = "https://github.com/fe5aeb1f/rustfit.git"
 publish = false
 
 [dependencies]
-nom = "^5"
+nom = "^6"
+wasm-bindgen = "0.2"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
