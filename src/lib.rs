@@ -23,13 +23,13 @@ use std::borrow::Cow;
 use std::rc::Rc;
 
 /// Encapsulates a Fit file.
-pub struct Fit {
+pub struct Fit<'data> {
     /// FIT file header.
     pub header: FileHeader,
     /// CRC of the header bytes. This is not the same as header.checksum!
     header_checksum: u16,
     /// Payload data (definition records and data records).
-    payload: Vec<u8>,
+    payload: &'data [u8],
     ///
     checksum_bytes: Option<Vec<u8>>,
 }
@@ -53,7 +53,7 @@ pub struct MessageIterator<'data> {
     parser: Parser<'data>,
 }
 
-impl<'data> Fit {
+impl<'data> Fit<'data> {
     /// Initialises a new Fit structure from a byte slice.
     ///
     /// The byte slice must contain a valid Fit header.
@@ -120,7 +120,7 @@ impl<'data> Fit {
 
         // Calculate the checksum of *all* the bytes in the header. In most cases, this will
         // return 0. This is not the same calculation performed above.
-        let header_checksum = data[..(header.length as usize)].iter().fold(0, crc);
+        let header_checksum = 0; //data[..(header.length as usize)].iter().fold(0, crc);
 
         // Check that we have sufficient data.
         let declared_length = header.file_size as usize;
@@ -134,7 +134,7 @@ impl<'data> Fit {
                 Ok(Fit {
                     header,
                     header_checksum,
-                    payload: payload[..declared_length].to_vec(),
+                    payload: &payload[..declared_length],
                     checksum_bytes: Some(payload[declared_length..(declared_length + 2)].to_vec()),
                 })
             },
@@ -144,7 +144,7 @@ impl<'data> Fit {
                 Ok(Fit {
                     header,
                     header_checksum,
-                    payload: payload.to_vec(),
+                    payload: payload,
                     checksum_bytes: None,
                 })
             },
@@ -199,7 +199,7 @@ impl<'data> Fit {
     }
     /// Constructs a new parser for the Fit file.
     pub fn parser(&'data self) -> Parser<'data> {
-        Parser::from(self)
+        Parser::from(self.payload)
     }
     /// Returns a [`MessageIterator`] which iterates over all the data messages in the Fit file.
     ///
@@ -235,110 +235,6 @@ impl<'data> Fit {
     pub fn messages(&'data self) -> MessageIterator<'data> {
         MessageIterator {
             parser: self.parser(),
-        }
-    }
-}
-
-impl Default for Fit {
-    /// Initialises an empty `Fit` structure.
-    ///
-    /// Calling [`checksum()`], or [`verify_checksum()`] on the result will not panic, and
-    /// [`parser()`], or [`messages()`] will produce Iterators that produce no items.
-    ///
-    /// ```
-    /// use rustfit::{Fit, FileHeader, Error};
-    ///
-    /// let fit = Fit::default();
-    /// assert_eq!(fit.header, FileHeader::default());
-    /// assert_eq!(fit.compute_checksum(), 0x0000);
-    /// assert_eq!(fit.verify_checksum(), false);
-    ///
-    /// let mut parser = fit.parser();
-    /// assert_eq!(true, match parser.step() {
-    ///     Err(Error::EndOfInput) => true,
-    ///     _ => false,
-    /// });
-    ///
-    /// assert_eq!(None, parser.next());
-    /// assert_eq!(None, parser.next());
-    ///
-    /// let mut messages = fit.messages();
-    /// assert_eq!(None, messages.next());
-    /// assert_eq!(None, messages.next());
-    /// assert_eq!(None, messages.next());
-    /// ```
-    ///
-    /// [`checksum()`]: struct.Fit.html#method.checksum
-    /// [`verify_checksum()`]: struct.Fit.html#method.verify_checksum
-    /// [`parser()`]: struct.Fit.html#method.parser
-    /// [`messages()`]: struct.Fit.html#method.messages
-    fn default() -> Self {
-        Fit {
-            header: FileHeader::default(),
-            header_checksum: 0,
-            payload: Vec::new(),
-            checksum_bytes: None,
-        }
-    }
-}
-
-impl<'a, T> From<&'a mut T> for Fit where T: std::io::Read {
-    /// Creates a [`Fit`] from any type that implements [`Read`]
-    ///
-    /// # Examples
-    /// ```
-    /// # fn main() -> Result<(), rustfit::Error> {
-    /// use std::path::Path;
-    /// use std::fs::File;
-    /// let path = Path::new("samples/sample01.fit");
-    /// let mut file = File::open(&path).expect("Error opening file");
-    /// let fit = rustfit::Fit::from(&mut file);
-    ///
-    /// assert!(fit.verify_checksum());
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// On failure, a default [`Fit`] structure is returned:
-    /// ```
-    /// # fn main() -> Result<(), rustfit::Error> {
-    /// use std::path::Path;
-    /// use std::fs::File;
-    /// let path = Path::new("samples/randombytes.fit");
-    /// let mut file = File::open(&path).expect("Error opening file");
-    /// let fit = rustfit::Fit::from(&mut file);
-    ///
-    /// assert_ne!(fit.verify_checksum(), true, "Checksum should not be valid!");
-    /// assert_eq!(fit.header.length, 0);
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// [`Fit`]: struct.Fit.html
-    /// [`Read`]: http://doc.rust-lang.org/std/os/trait.Read.html
-    fn from(from: &'a mut T) -> Self {
-        let mut buffer: Vec<u8> = Vec::new();
-        match from.read_to_end(&mut buffer) {
-            Ok(_) => {
-                match Fit::from_bytes(&buffer) {
-                    Ok(fit) => fit,
-                    Err(_) => Fit::default()
-                }
-            }
-            Err(_) => Fit::default()
-        }
-    }
-}
-
-impl<'data> From<&'data Fit> for Parser<'data> {
-    fn from(fit: &'data Fit) -> Self {
-        Parser {
-            definitions: [
-                None, None, None, None, None, None, None, None,
-                None, None, None, None, None, None, None, None,
-            ],
-            position: 0,
-            data: &fit.payload
         }
     }
 }
