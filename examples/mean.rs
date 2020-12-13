@@ -6,20 +6,18 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 
-fn calculate_mean_power(fit: &Fit) -> Option<f32> {
-    // 1. Iterate over #20 (record) messages, and extract any power values (field #7)
-    let values = fit
+fn calculate_mean_power(fit: &Fit) -> Option<f64> {
+    let (count, sum) = fit
         .messages()
-        .filter_map(|ref message| match message.number() {
-            20 => message.field_u16(7),
-            _ => None
-        });
-    // 2. Calculate the mean, avoiding use of `.collect()` (because memory allocations are slow)
-    let (count, sum) = values.fold((0u16, 0u32), |(c, total), v| (c + 1, total + v as u32));
-    // 3. `count` will be 0 iff there is no power data in the file
+        .filter_map(|message| match message.number() {
+            20 => message.field_u32(7),
+            _ => None,
+        })
+        .fold((0_u32, 0_f64), |(count, sum), value| (count + 1, sum + f64::from(value)));
+    // `count` will be 0 iff there is no power data in the file
     match count {
         0 => None,
-        _ => Some(sum as f32 / count as f32),
+        _ => Some(sum / f64::from(count)),
     }
 }
 
@@ -45,16 +43,17 @@ fn main() -> Result<(), Error> {
 
     for argument in args {
         let path = Path::new(&argument);
-        let filename = path.file_name().unwrap_or_else(|| path.as_os_str()).to_string_lossy();
+        let filename = path
+            .file_name()
+            .unwrap_or_else(|| path.as_os_str())
+            .to_string_lossy();
         let mut file = File::open(&path)?;
-        let mut buf: Vec<u8> = Vec::new();
+        let mut buf: Vec<u8> = Vec::with_capacity(1e6 as usize);
         file.read_to_end(&mut buf)?;
         match Fit::from_bytes(&buf) {
-            Ok(fit) => {
-                match calculate_mean_power(&fit) {
-                    Some(mean) => println!("{}: mean power = {:.0} Watts", filename, mean),
-                    None => println!("{}: no power data", filename),
-                }
+            Ok(fit) => match calculate_mean_power(&fit) {
+                Some(mean) => println!("{}: mean power = {:.0} Watts", filename, mean),
+                None => println!("{}: no power data", filename),
             },
             Err(error) => {
                 eprintln!("{:?}", error);
