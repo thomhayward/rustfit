@@ -1,9 +1,9 @@
-use nom::number::Endianness;
+use super::types::*;
 use nom::number::streaming::{be_f32, be_f64, le_f32, le_f64, le_i8, le_u16, le_u32, le_u8};
+use nom::number::Endianness;
 use nom::IResult;
 use nom::ToUsize;
 use std::borrow::Borrow;
-use super::types::*;
 
 macro_rules! f32 ( ($i:expr, $e:expr) => ( {if Endianness::Big == $e { be_f32($i) } else { le_f32($i) } } ););
 macro_rules! f64 ( ($i:expr, $e:expr) => ( {if Endianness::Big == $e { be_f64($i) } else { le_f64($i) } } ););
@@ -17,18 +17,25 @@ macro_rules! f64 ( ($i:expr, $e:expr) => ( {if Endianness::Big == $e { be_f64($i
 /// The header checksum is not verified.
 ///
 pub fn take_file_header(input: &[u8]) -> IResult<&[u8], FileHeader> {
-    use nom::combinator::{cond, verify};
     use nom::bytes::streaming::tag;
+    use nom::combinator::{cond, verify};
     let (input, length) = verify(le_u8, |&val: &u8| val == 12 || val == 14)(input)?;
     let (input, protocol) = le_u8(input)?;
     let (input, profile) = le_u16(input)?;
     let (input, file_size) = le_u32(input)?;
     let (input, fit_tag) = tag(".FIT")(input)?;
     let (input, checksum) = cond(length == 14, le_u16)(input)?;
-    Ok((input, FileHeader {
-        length, protocol, profile, tag: [fit_tag[0], fit_tag[1], fit_tag[2], fit_tag[3]],
-        file_size, checksum
-    }))
+    Ok((
+        input,
+        FileHeader {
+            length,
+            protocol,
+            profile,
+            tag: [fit_tag[0], fit_tag[1], fit_tag[2], fit_tag[3]],
+            file_size,
+            checksum,
+        },
+    ))
 }
 
 #[inline(always)]
@@ -49,7 +56,7 @@ pub fn take_field_definition(input: &[u8]) -> IResult<&[u8], (u8, u8, u8)> {
 fn take_field_definitions(input: &[u8]) -> IResult<&[u8], Vec<(u8, u8, u8)>> {
     use nom::combinator::verify;
     use nom::multi::count;
-    let (input, cnt) = verify(le_u8, |&c :&u8| c > 0)(input)?;
+    let (input, cnt) = verify(le_u8, |&c: &u8| c > 0)(input)?;
     count(take_field_definition, cnt.to_usize())(input)
 }
 
@@ -58,7 +65,7 @@ pub fn take_byteorder(input: &[u8]) -> IResult<&[u8], Endianness> {
     use nom::combinator::verify;
     match verify(le_u8, |&val: &u8| val == 0 || val == 1)(input)? {
         (i, 0) => Ok((i, Endianness::Little)),
-        (i, _) => Ok((i, Endianness::Big))
+        (i, _) => Ok((i, Endianness::Big)),
     }
 }
 
@@ -80,7 +87,8 @@ pub fn process_field_definitions(
                 offset: current_offset,
                 data_type: data_type,
             })
-        }).collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>()
 }
 
 #[inline]
@@ -90,32 +98,40 @@ pub fn take_message_definition(header: u8) -> impl Fn(&[u8]) -> IResult<&[u8], M
         use nom::sequence::tuple;
         let (input, (reserved, byte_order)) = tuple((le_u8, take_byteorder))(input)?;
         let (input, number) = take_u16(byte_order)(input)?;
-        let (input, (fields, developer_fields)) = tuple((take_field_definitions, cond(header.developer(), take_field_definitions)))(input)?;
+        let (input, (fields, developer_fields)) = tuple((
+            take_field_definitions,
+            cond(header.developer(), take_field_definitions),
+        ))(input)?;
         //
-        let base_field_length = fields.iter().fold(0, |a, &(_, length, _)| a + (length.to_usize()));
+        let base_field_length = fields
+            .iter()
+            .fold(0, |a, &(_, length, _)| a + (length.to_usize()));
         let devl_field_length = match &developer_fields {
-            Some(fields) => fields.iter().fold(0, |a, &(_, length, _)| a + (length.to_usize())),
-            None => 0
+            Some(fields) => fields
+                .iter()
+                .fold(0, |a, &(_, length, _)| a + (length.to_usize())),
+            None => 0,
         };
-        Ok((input, MessageDefinition {
-            reserved,
-            number,
-            length: base_field_length + devl_field_length,
-            byte_order,
-            fields: process_field_definitions(&fields, 0),
-            developer_fields: match &developer_fields {
-                Some(fields) => Some(process_field_definitions(&fields, base_field_length)),
-                None => None
-            }
-        }))
+        Ok((
+            input,
+            MessageDefinition {
+                reserved,
+                number,
+                length: base_field_length + devl_field_length,
+                byte_order,
+                fields: process_field_definitions(&fields, 0),
+                developer_fields: match &developer_fields {
+                    Some(fields) => Some(process_field_definitions(&fields, base_field_length)),
+                    None => None,
+                },
+            },
+        ))
     }
 }
 
 #[inline(always)]
 pub fn take_message_data(length: usize) -> impl Fn(&[u8]) -> IResult<&[u8], &[u8]> {
-    move |input: &[u8]| {
-        nom::bytes::streaming::take(length)(input)
-    }
+    move |input: &[u8]| nom::bytes::streaming::take(length)(input)
 }
 
 #[inline(always)]
@@ -125,49 +141,39 @@ pub fn take_checksum(input: &[u8]) -> IResult<&[u8], u16> {
 
 #[inline(always)]
 pub fn take_u16(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], u16> {
-    move |input: &[u8]| {
-        u16!(input, endianness)
-    }
+    move |input: &[u8]| u16!(input, endianness)
 }
 
 #[inline(always)]
 pub fn take_i16(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], i16> {
-    move |input: &[u8]| {
-        i16!(input, endianness)
-    }
+    move |input: &[u8]| i16!(input, endianness)
 }
 
 #[inline(always)]
 pub fn take_u32(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], u32> {
-    move |input: &[u8]| {
-        u32!(input, endianness)
-    }
+    move |input: &[u8]| u32!(input, endianness)
 }
 
 #[inline(always)]
 pub fn take_i32(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], i32> {
-    move |input: &[u8]| {
-        i32!(input, endianness)
-    }
+    move |input: &[u8]| i32!(input, endianness)
 }
 
 #[inline(always)]
 pub fn take_u64(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], u64> {
-    move |input: &[u8]| {
-        u64!(input, endianness)
-    }
+    move |input: &[u8]| u64!(input, endianness)
 }
 
 #[inline(always)]
 pub fn take_i64(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], i64> {
-    move |input: &[u8]| {
-        i64!(input, endianness)
-    }
+    move |input: &[u8]| i64!(input, endianness)
 }
 
 /// Returns a field from `message` using the supplied field definition. Note that the whether
 /// `field_definition` is valid for the message is not checked.
-pub fn take_field<'a>(field_definition: &'a FieldDefinition) -> impl Fn(&'a Message) -> IResult<&'a [u8], FieldValue> {
+pub fn take_field<'a>(
+    field_definition: &'a FieldDefinition,
+) -> impl Fn(&'a Message) -> IResult<&'a [u8], FieldValue> {
     use nom::bytes::streaming::take;
     use nom::multi::count;
     move |message: &'a Message| {
@@ -275,15 +281,13 @@ pub fn take_field<'a>(field_definition: &'a FieldDefinition) -> impl Fn(&'a Mess
                         match String::from_utf8(chopped.to_vec()) {
                             Ok(string) => Ok((input, FieldValue::String(string))),
                             // TODO: Fix me!
-                            Err(_) => Ok((input, FieldValue::String("Hi".to_string())))
-                            //Err(_) => Err(nom::Err::Error(&bytes, ERROR_UTF8_ERROR)),
+                            Err(_) => Ok((input, FieldValue::String("Hi".to_string()))), //Err(_) => Err(nom::Err::Error(&bytes, ERROR_UTF8_ERROR)),
                         }
                     }
                     None => match String::from_utf8(bytes.to_vec()) {
                         Ok(string) => Ok((input, FieldValue::String(string))),
                         // TODO: Fix me!
-                        Err(_) => Ok((input, FieldValue::String("Hi".to_string())))
-                        //Err(_) => Err(Failure(Code(&bytes, Custom(ERROR_UTF8_ERROR)))),
+                        Err(_) => Ok((input, FieldValue::String("Hi".to_string()))), //Err(_) => Err(Failure(Code(&bytes, Custom(ERROR_UTF8_ERROR)))),
                     },
                 }
             }
@@ -298,7 +302,8 @@ pub fn take_field<'a>(field_definition: &'a FieldDefinition) -> impl Fn(&'a Mess
                     Ok((i, FieldValue::F32(value)))
                 } else {
                     let count = field_definition.length / std::mem::size_of::<f32>();
-                    let (i, values) = do_parse!(input, vs: count!(f32!(endianness), count) >> (vs))?;
+                    let (i, values) =
+                        do_parse!(input, vs: count!(f32!(endianness), count) >> (vs))?;
                     Ok((i, FieldValue::F32Array(values.to_vec())))
                 }
             }
@@ -313,7 +318,8 @@ pub fn take_field<'a>(field_definition: &'a FieldDefinition) -> impl Fn(&'a Mess
                     Ok((i, FieldValue::F64(value)))
                 } else {
                     let count = field_definition.length / std::mem::size_of::<f64>();
-                    let (i, values) = do_parse!(input, vs: count!(f64!(endianness), count) >> (vs))?;
+                    let (i, values) =
+                        do_parse!(input, vs: count!(f64!(endianness), count) >> (vs))?;
                     Ok((i, FieldValue::F64Array(values.to_vec())))
                 }
             }

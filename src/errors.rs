@@ -2,24 +2,38 @@ use super::*;
 
 #[derive(Debug)]
 pub enum Error {
-
     /// The length of the file header is not supported. Should be either 12 or 14 bytes.
     InvalidHeaderSize(Vec<u8>),
     InvalidHeaderTag(Vec<u8>),
-    HeaderChecksumFailure { found: u16, computed: u16 },
+    HeaderChecksumFailure {
+        found: u16,
+        computed: u16,
+    },
 
     /// The parser encountered a data message bound to a local-type that does not have an
     /// associated message definition.
-    UndefinedLocalType { position: usize, header: u8 },
+    UndefinedLocalType {
+        position: usize,
+        header: u8,
+    },
 
     /// The parser encountered a definition message that defines a data message longer than 255
     /// bytes.
-    InvalidMessageLength { position: usize, header: u8, definition: MessageDefinition },
+    InvalidMessageLength {
+        position: usize,
+        header: u8,
+        definition: MessageDefinition,
+    },
 
     EndOfInput,
-    InsufficientData { required: usize },
+    InsufficientData {
+        required: usize,
+    },
 
-    Incomplete { expected: usize, have: usize },
+    Incomplete {
+        expected: usize,
+        have: usize,
+    },
     Unknown,
 }
 
