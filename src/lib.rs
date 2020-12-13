@@ -12,6 +12,7 @@ mod crc;
 mod errors;
 mod message;
 mod parser;
+pub mod timestamp;
 pub mod types;
 
 pub use crc::crc;
