@@ -1,9 +1,5 @@
 //! A fast, low-level parser library for Garmin's .FIT format.
 //!
-//! ## This parser is lazy!
-//! Scanning though a .FIT file with this library is designed to be as cheap as possible. The
-//! parser avoids copying data as much as possible. Data messages are returned as slice
-//! references, and message fields are only parsed if you attempt to read them.
 
 #[macro_use]
 extern crate nom;
@@ -32,7 +28,7 @@ pub struct Fit<'data> {
     /// Payload data (definition records and data records).
     payload: &'data [u8],
     ///
-    checksum_bytes: Option<Vec<u8>>,
+    checksum_bytes: Option<[u8; 2]>,
 }
 
 /// Manages parser state.
@@ -98,7 +94,6 @@ impl<'data> Fit<'data> {
     /// ```
     ///
     pub fn from_bytes(data: &'data [u8]) -> Result<Self, Error> {
-
         use nom::error::ErrorKind;
 
         let (payload, header) = match parser::take_file_header(data) {
@@ -106,16 +101,19 @@ impl<'data> Fit<'data> {
             Err(nom::Err::Error(nom::error::Error { input, code })) => match code {
                 ErrorKind::Verify => return Err(Error::InvalidHeaderSize(input.to_vec())),
                 ErrorKind::Tag => return Err(Error::InvalidHeaderTag(input.to_vec())),
-                _ => return Err(Error::Unknown)
+                _ => return Err(Error::Unknown),
             },
-            Err(_) => return Err(Error::Unknown)
+            Err(_) => return Err(Error::Unknown),
         };
 
         // If the header checksum is present, verify it.
         if let Some(checksum) = header.checksum {
             let computed = data[..12].iter().fold(0, crc);
             if checksum != computed && checksum != 0 {
-                return Err(Error::HeaderChecksumFailure { found: checksum, computed });
+                return Err(Error::HeaderChecksumFailure {
+                    found: checksum,
+                    computed,
+                });
             }
         }
 
@@ -131,28 +129,23 @@ impl<'data> Fit<'data> {
         match declared_length.cmp(&actual_length) {
             // We've been given either the exact amount of data, or more data than the header
             // thinks we should have.
-            Ordering::Less | Ordering::Equal => {
-                Ok(Fit {
+            Ordering::Less | Ordering::Equal => Ok(Fit {
                     header,
                     header_checksum,
                     payload: &payload[..declared_length],
-                    checksum_bytes: Some(payload[declared_length..(declared_length + 2)].to_vec()),
-                })
-            },
+                checksum_bytes: Some([payload[declared_length], payload[declared_length + 1]]),
+            }),
             // We've been given less data than the header claims we should have. The file is
             // incomplete.
-            Ordering::Greater => {
-                Ok(Fit {
+            Ordering::Greater => Ok(Fit {
                     header,
                     header_checksum,
                     payload: payload,
                     checksum_bytes: None,
-                })
-            },
+            }),
         }
 
         // You may also be tempted to validate the end-of-file checksum at this point. Don't!
-
     }
     /// Computes the end-of-file [checksum].
     ///
@@ -187,15 +180,11 @@ impl<'data> Fit<'data> {
     /// [checksum]: fn.crc.html
     pub fn verify_checksum(&self) -> bool {
         match self.checksum_bytes {
-            Some(ref bytes) => {
-                match parser::take_checksum(&bytes) {
-                    Ok((_, checksum)) => {
-                        checksum == self.compute_checksum()
+            Some(ref bytes) => match parser::take_checksum(&bytes[..]) {
+                Ok((_, checksum)) => checksum == self.compute_checksum(),
+                _ => false,
                     },
-                    _ => false
-                }
-            }
-            _ => false
+            _ => false,
         }
     }
     /// Constructs a new parser for the Fit file.
@@ -285,7 +274,7 @@ impl<'a> Parser<'a> {
         }
         let (input, header) = match parser::take_record_header(self.data) {
             Ok((i, h)) => (i, h),
-            Err(_) => return Err(Error::Unknown)
+            Err(_) => return Err(Error::Unknown),
         };
         match header.record_type() {
             RecordType::Data => {
@@ -294,26 +283,28 @@ impl<'a> Parser<'a> {
                     Some(ref def) => {
                         let (input, message) = match parser::take_message_data(def.length)(input) {
                             Ok((i, m)) => (i, m),
-                            Err(_) => return Err(Error::Unknown)
+                            Err(_) => return Err(Error::Unknown),
                         };
                         self.data = input;
                         self.position += remaining - input.len();
-                        Ok(Record::Message(header, Message {
+                        Ok(Record::Message(
+                            header,
+                            Message {
                             definition: Rc::clone(def),
                             data: Cow::Borrowed(message),
-                        }))
+                            },
+                        ))
                     }
-                    None => Err(
-                        Error::UndefinedLocalType {
+                    None => Err(Error::UndefinedLocalType {
                             position: self.position,
                             header: header,
-                        })
+                    }),
                 }
             }
             RecordType::Definition => {
                 let (input, definition) = match parser::take_message_definition(header)(input) {
                     Ok((i, d)) => (i, d),
-                    Err(_) => return Err(Error::Unknown)
+                    Err(_) => return Err(Error::Unknown),
                 };
                 self.data = input;
                 match definition.length <= 255 {
@@ -322,16 +313,18 @@ impl<'a> Parser<'a> {
                         self.definitions[header.local_type() as usize] = Some(Rc::clone(&def));
                         self.position += remaining - input.len();
                         Ok(Record::Definition(header, Rc::clone(&def)))
-                    },
-                    false => Err(
-                        Error::InvalidMessageLength {
+                    }
+                    false => Err(Error::InvalidMessageLength {
                             position: self.position,
                             header: header,
-                            definition: definition
+                        definition: definition,
                         }),
                 }
             }
         }
+    }
+    pub fn current_position(&self) -> usize {
+        self.position
     }
 }
 
