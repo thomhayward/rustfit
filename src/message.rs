@@ -50,35 +50,63 @@ impl<'a> Message<'a> {
             _ => None,
         }
     }
-    /// Returns the field specified by `number` iff the field is a scalar `i16`.
+    /// Returns the field specified by `number` iff the field can be represented as a scalar `i16`.
     #[inline(always)]
     pub fn field_i16(&self, number: u8) -> Option<i16> {
         match self.field(number) {
+            Some(FieldValue::I8(value)) => Some(value.into()),
             Some(FieldValue::I16(value)) => Some(value),
             _ => None,
         }
     }
-    /// Returns the field specified by `number` iff the field is a scalar `u16`.
+    /// Returns the field specified by `number` iff the field can be represented as a scalar `u16`.
     #[inline(always)]
     pub fn field_u16(&self, number: u8) -> Option<u16> {
         match self.field(number) {
+            Some(FieldValue::U8(value)) => Some(value.into()),
             Some(FieldValue::U16(value)) => Some(value),
             _ => None,
         }
     }
-    /// Returns the field specified by `number` iff the field is a scalar `i32`.
+    /// Returns the field specified by `number` iff the field is can be represented as scalar `i32`.
     #[inline(always)]
     pub fn field_i32(&self, number: u8) -> Option<i32> {
         match self.field(number) {
+            Some(FieldValue::I8(value)) => Some(value.into()),
+            Some(FieldValue::I16(value)) => Some(value.into()),
             Some(FieldValue::I32(value)) => Some(value),
             _ => None,
         }
     }
-    /// Returns the field specified by `number` iff the field is a scalar `u32`.
+    /// Returns the field specified by `number` iff the field can be represented as a scalar `u32`.
     #[inline(always)]
     pub fn field_u32(&self, number: u8) -> Option<u32> {
         match self.field(number) {
+            Some(FieldValue::U8(value)) => Some(value.into()),
+            Some(FieldValue::U16(value)) => Some(value.into()),
             Some(FieldValue::U32(value)) => Some(value),
+            _ => None,
+        }
+    }
+    /// Returns the field specified by `number` iff the field can be represented as a scalar `i64`.
+    #[inline(always)]
+    pub fn field_i64(&self, number: u8) -> Option<i64> {
+        match self.field(number) {
+            Some(FieldValue::I8(value)) => Some(value.into()),
+            Some(FieldValue::I16(value)) => Some(value.into()),
+            Some(FieldValue::I32(value)) => Some(value.into()),
+            Some(FieldValue::I64(value)) => Some(value),
+            _ => None,
+        }
+    }
+    /// Returns the field specified by `number` iff the field can be represented as a scalar `u64`.
+    #[inline(always)]
+    pub fn field_u64(&self, number: u8) -> Option<u64> {
+        match self.field(number) {
+            Some(FieldValue::U8(value)) => Some(value.into()),
+            Some(FieldValue::U16(value)) => Some(value.into()),
+            Some(FieldValue::U32(value)) => Some(value.into()),
+            Some(FieldValue::U64(value)) => Some(value),
             _ => None,
         }
     }
