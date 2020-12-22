@@ -75,7 +75,7 @@ pub struct FieldDefinition {
     pub number: u8,
     /// The length of the field in bytes. This may be a whole multiple of the intrinsic length of
     /// the field's data-type, which indicates field is an array of the base data-type.
-    pub length: usize,
+    pub length: u8,
     /// A bit-mask identifying the data-type of the field.
     ///
     /// This implementation only looks at the lower 4 bits. The upper 4 bits contain redundant
@@ -85,7 +85,7 @@ pub struct FieldDefinition {
     ///
     /// This is not present in the file, but is calculatd when parsing each message definition.
     /// For some reason, this is faster even when only a single field is read later on.
-    pub offset: usize,
+    pub offset: u16,
 }
 
 #[derive(Debug, Clone)]
@@ -130,7 +130,7 @@ pub struct MessageDefinition {
     pub number: u16,
     /// Total length of corresponding messages in bytes. Does not exist in file structure, but is
     /// stored to save calculating on reading of every message.
-    pub length: usize,
+    pub length: u16,
     /// The architecture type (little-endian or big-endian) of multi-byte fields in corresponding
     /// messages.
     pub byte_order: Endianness,
