@@ -159,11 +159,19 @@ pub enum Record<'a> {
 
 impl PartialEq for MessageDefinition {
     fn eq(&self, other: &MessageDefinition) -> bool {
-        self.reserved == other.reserved &&
-        self.number == other.number &&
-        self.length == other.length &&
-        self.byte_order == other.byte_order &&
-        self.fields.iter().zip(other.fields.iter()).all(|(a, b)| a == b) &&
-        self.developer_fields.iter().zip(other.developer_fields.iter()).all(|(a, b)| a == b)
+        self.reserved == other.reserved
+            && self.number == other.number
+            && self.length == other.length
+            && self.byte_order == other.byte_order
+            && self
+                .fields
+                .iter()
+                .zip(other.fields.iter())
+                .all(|(a, b)| a == b)
+            && self
+                .developer_fields
+                .iter()
+                .zip(other.developer_fields.iter())
+                .all(|(a, b)| a == b)
     }
 }

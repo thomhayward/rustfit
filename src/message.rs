@@ -135,12 +135,13 @@ impl<'a> Message<'a> {
     }
     /// Constructs an iterator over the developer fields present in the message, if any exist.
     pub fn developer_fields(&self) -> Option<DeveloperFieldIterator> {
-        self.definition.developer_fields.as_ref().map(|fields| {
-            DeveloperFieldIterator {
+        self.definition
+            .developer_fields
+            .as_ref()
+            .map(|fields| DeveloperFieldIterator {
                 message: self,
-                iterator: fields.iter()
-            }
-        })
+                iterator: fields.iter(),
+            })
     }
 }
 
@@ -149,9 +150,9 @@ impl<'a> Iterator for FieldIterator<'a> {
     #[inline]
     fn next(&mut self) -> Option<(FieldDefinition, FieldValue)> {
         self.iterator.next().and_then(|field_def| {
-            self.message.field(field_def.number).map(|field_value| {
-                (field_def.clone(), field_value)
-            })
+            self.message
+                .field(field_def.number)
+                .map(|field_value| (field_def.clone(), field_value))
         })
     }
 }
@@ -161,9 +162,9 @@ impl<'a> Iterator for DeveloperFieldIterator<'a> {
     #[inline]
     fn next(&mut self) -> Option<(FieldDefinition, FieldValue)> {
         self.iterator.next().and_then(|field_def| {
-            self.message.developer_field(field_def.number).map(|field_value| {
-                (field_def.clone(), field_value)
-            })
+            self.message
+                .developer_field(field_def.number)
+                .map(|field_value| (field_def.clone(), field_value))
         })
     }
 }

@@ -123,24 +123,24 @@ impl<'data> Fit<'data> {
         // Check that we have sufficient data.
         let declared_length = header.file_size as usize;
         let actual_length = payload.len() - 2; // payload contains everything after the header.
-        //
+                                               //
         use std::cmp::Ordering;
         match declared_length.cmp(&actual_length) {
             // We've been given either the exact amount of data, or more data than the header
             // thinks we should have.
             Ordering::Less | Ordering::Equal => Ok(Fit {
-                    header,
-                    header_checksum,
-                    payload: &payload[..declared_length],
+                header,
+                header_checksum,
+                payload: &payload[..declared_length],
                 checksum_bytes: Some([payload[declared_length], payload[declared_length + 1]]),
             }),
             // We've been given less data than the header claims we should have. The file is
             // incomplete.
             Ordering::Greater => Ok(Fit {
-                    header,
-                    header_checksum,
-                    payload,
-                    checksum_bytes: None,
+                header,
+                header_checksum,
+                payload,
+                checksum_bytes: None,
             }),
         }
 
@@ -182,7 +182,7 @@ impl<'data> Fit<'data> {
             Some(ref bytes) => match parser::take_checksum(&bytes[..]) {
                 Ok((_, checksum)) => checksum == self.compute_checksum(),
                 _ => false,
-                    },
+            },
             _ => false,
         }
     }
@@ -255,8 +255,8 @@ impl<'data> From<&'data [u8]> for Parser<'data> {
     fn from(from: &'data [u8]) -> Self {
         Parser {
             definitions: [
-                None, None, None, None, None, None, None, None,
-                None, None, None, None, None, None, None, None,
+                None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+                None, None,
             ],
             position: 0,
             data: from,
@@ -289,14 +289,14 @@ impl<'a> Parser<'a> {
                         Ok(Record::Message(
                             header,
                             Message {
-                            definition: Rc::clone(def),
-                            data: Cow::Borrowed(message),
+                                definition: Rc::clone(def),
+                                data: Cow::Borrowed(message),
                             },
                         ))
                     }
                     None => Err(Error::UndefinedLocalType {
-                            position: self.position,
-                            header,
+                        position: self.position,
+                        header,
                     }),
                 }
             }
@@ -314,10 +314,10 @@ impl<'a> Parser<'a> {
                         Ok(Record::Definition(header, Rc::clone(&def)))
                     }
                     false => Err(Error::InvalidMessageLength {
-                            position: self.position,
-                            header,
-                            definition,
-                        }),
+                        position: self.position,
+                        header,
+                        definition,
+                    }),
                 }
             }
         }

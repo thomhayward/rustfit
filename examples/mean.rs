@@ -13,7 +13,9 @@ fn calculate_mean_power(fit: &Fit) -> Option<f64> {
             20 => message.field_u32(7),
             _ => None,
         })
-        .fold((0_u32, 0_f64), |(count, sum), value| (count + 1, sum + f64::from(value)));
+        .fold((0_u32, 0_f64), |(count, sum), value| {
+            (count + 1, sum + f64::from(value))
+        });
     // `count` will be 0 iff there is no power data in the file
     match count {
         0 => None,

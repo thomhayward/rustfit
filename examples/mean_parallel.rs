@@ -37,7 +37,7 @@ fn load(filename: &String) -> Option<Vec<u8>> {
                     None
                 }
             }
-        },
+        }
         Err(error) => {
             eprintln!("{:?}", error);
             None
