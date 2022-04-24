@@ -1,12 +1,10 @@
 use super::types::*;
-use nom::number::streaming::{be_f32, be_f64, le_f32, le_f64, le_i8, le_u16, le_u32, le_u8};
+use nom::number::streaming::{le_i8, le_u8};
+use nom::number::streaming;
 use nom::number::Endianness;
 use nom::IResult;
 use nom::ToUsize;
 use std::borrow::Borrow;
-
-macro_rules! f32 ( ($i:expr, $e:expr) => ( {if Endianness::Big == $e { be_f32($i) } else { le_f32($i) } } ););
-macro_rules! f64 ( ($i:expr, $e:expr) => ( {if Endianness::Big == $e { be_f64($i) } else { le_f64($i) } } ););
 
 /// Consumes a file header.
 ///
@@ -19,12 +17,12 @@ macro_rules! f64 ( ($i:expr, $e:expr) => ( {if Endianness::Big == $e { be_f64($i
 pub fn take_file_header(input: &[u8]) -> IResult<&[u8], FileHeader> {
     use nom::bytes::streaming::tag;
     use nom::combinator::{cond, verify};
-    let (input, length) = verify(le_u8, |&val: &u8| val == 12 || val == 14)(input)?;
-    let (input, protocol) = le_u8(input)?;
-    let (input, profile) = le_u16(input)?;
-    let (input, file_size) = le_u32(input)?;
+    let (input, length) = verify(streaming::le_u8, |&val: &u8| val == 12 || val == 14)(input)?;
+    let (input, protocol) = streaming::le_u8(input)?;
+    let (input, profile) = streaming::le_u16(input)?;
+    let (input, file_size) = streaming::le_u32(input)?;
     let (input, fit_tag) = tag(".FIT")(input)?;
-    let (input, checksum) = cond(length == 14, le_u16)(input)?;
+    let (input, checksum) = cond(length == 14, streaming::le_u16)(input)?;
     Ok((
         input,
         FileHeader {
@@ -82,10 +80,10 @@ pub fn process_field_definitions(
             let current_offset = *offset;
             *offset += u16::from(length);
             Some(FieldDefinition {
-                number: number,
-                length: length,
+                number,
+                length,
                 offset: current_offset,
-                data_type: data_type,
+                data_type,
             })
         })
         .collect::<Vec<_>>()
@@ -97,7 +95,7 @@ pub fn take_message_definition(header: u8) -> impl Fn(&[u8]) -> IResult<&[u8], M
         use nom::combinator::cond;
         use nom::sequence::tuple;
         let (input, (reserved, byte_order)) = tuple((le_u8, take_byteorder))(input)?;
-        let (input, number) = take_u16(byte_order)(input)?;
+        let (input, number) = streaming::u16(byte_order)(input)?;
         let (input, (fields, developer_fields)) = tuple((
             take_field_definitions,
             cond(header.developer(), take_field_definitions),
@@ -136,38 +134,39 @@ pub fn take_message_data(length: u16) -> impl Fn(&[u8]) -> IResult<&[u8], &[u8]>
 
 #[inline(always)]
 pub fn take_checksum(input: &[u8]) -> IResult<&[u8], u16> {
-    le_u16(input)
+    streaming::le_u16(input)
 }
 
-#[inline(always)]
-pub fn take_u16(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], u16> {
-    move |input: &[u8]| u16!(input, endianness)
-}
+// #[inline(always)]
+// pub fn take_u16(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], u16> {
+//     use nom::number::streaming;
+//     streaming::u16(endianness)
+// }
 
-#[inline(always)]
-pub fn take_i16(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], i16> {
-    move |input: &[u8]| i16!(input, endianness)
-}
+// #[inline(always)]
+// pub fn take_i16(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], i16> {
+//     move |input: &[u8]| i16!(input, endianness)
+// }
 
-#[inline(always)]
-pub fn take_u32(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], u32> {
-    move |input: &[u8]| u32!(input, endianness)
-}
+// #[inline(always)]
+// pub fn take_u32(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], u32> {
+//     move |input: &[u8]| u32!(input, endianness)
+// }
 
-#[inline(always)]
-pub fn take_i32(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], i32> {
-    move |input: &[u8]| i32!(input, endianness)
-}
+// #[inline(always)]
+// pub fn take_i32(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], i32> {
+//     move |input: &[u8]| i32!(input, endianness)
+// }
 
-#[inline(always)]
-pub fn take_u64(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], u64> {
-    move |input: &[u8]| u64!(input, endianness)
-}
+// #[inline(always)]
+// pub fn take_u64(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], u64> {
+//     move |input: &[u8]| u64!(input, endianness)
+// }
 
-#[inline(always)]
-pub fn take_i64(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], i64> {
-    move |input: &[u8]| i64!(input, endianness)
-}
+// #[inline(always)]
+// pub fn take_i64(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], i64> {
+//     move |input: &[u8]| i64!(input, endianness)
+// }
 
 /// Returns a field from `message` using the supplied field definition. Note that the whether
 /// `field_definition` is valid for the message is not checked.
@@ -213,13 +212,13 @@ pub fn take_field<'a>(
             }
             3 => {
                 if usize::from(field_definition.length) == std::mem::size_of::<i16>() {
-                    match take_i16(endianness)(input)? {
+                    match streaming::i16(endianness)(input)? {
                         (i, std::i16::MAX) => Ok((i, FieldValue::Nil)),
                         (i, value) => Ok((i, FieldValue::I16(value))),
                     }
                 } else {
                     let value_count = usize::from(field_definition.length) / std::mem::size_of::<i16>();
-                    let (i, values) = count(take_i16(endianness), value_count)(input)?;
+                    let (i, values) = count(streaming::i16(endianness), value_count)(input)?;
                     match values.iter().all(|&v| v == std::i16::MAX) {
                         true => Ok((i, FieldValue::Nil)),
                         false => Ok((i, FieldValue::I16Array(values.to_vec()))),
@@ -228,13 +227,13 @@ pub fn take_field<'a>(
             }
             4 => {
                 if usize::from(field_definition.length) == std::mem::size_of::<u16>() {
-                    match take_u16(endianness)(input)? {
+                    match streaming::u16(endianness)(input)? {
                         (i, std::u16::MAX) => Ok((i, FieldValue::Nil)),
                         (i, value) => Ok((i, FieldValue::U16(value))),
                     }
                 } else {
                     let value_count = usize::from(field_definition.length) / std::mem::size_of::<u16>();
-                    let (i, values) = count(take_u16(endianness), value_count)(input)?;
+                    let (i, values) = count(streaming::u16(endianness), value_count)(input)?;
                     match values.iter().all(|&v| v == std::u16::MAX) {
                         true => Ok((i, FieldValue::Nil)),
                         false => Ok((i, FieldValue::U16Array(values.to_vec()))),
@@ -243,13 +242,13 @@ pub fn take_field<'a>(
             }
             5 => {
                 if usize::from(field_definition.length) == std::mem::size_of::<i32>() {
-                    match take_i32(endianness)(input)? {
+                    match streaming::i32(endianness)(input)? {
                         (i, std::i32::MAX) => Ok((i, FieldValue::Nil)),
                         (i, value) => Ok((i, FieldValue::I32(value))),
                     }
                 } else {
                     let value_count = usize::from(field_definition.length) / std::mem::size_of::<i32>();
-                    let (i, values) = count(take_i32(endianness), value_count)(input)?;
+                    let (i, values) = count(streaming::i32(endianness), value_count)(input)?;
                     match values.iter().all(|&v| v == std::i32::MAX) {
                         true => Ok((i, FieldValue::Nil)),
                         false => Ok((i, FieldValue::I32Array(values.to_vec()))),
@@ -258,13 +257,13 @@ pub fn take_field<'a>(
             }
             6 => {
                 if usize::from(field_definition.length) == std::mem::size_of::<u32>() {
-                    match take_u32(endianness)(input)? {
+                    match streaming::u32(endianness)(input)? {
                         (i, std::u32::MAX) => Ok((i, FieldValue::Nil)),
                         (i, value) => Ok((i, FieldValue::U32(value))),
                     }
                 } else {
                     let value_count = usize::from(field_definition.length) / std::mem::size_of::<u32>();
-                    let (i, values) = count(take_u32(endianness), value_count)(input)?;
+                    let (i, values) = count(streaming::u32(endianness), value_count)(input)?;
                     match values.iter().all(|&v| v == std::u32::MAX) {
                         true => Ok((i, FieldValue::Nil)),
                         false => Ok((i, FieldValue::U32Array(values.to_vec()))),
@@ -298,12 +297,11 @@ pub fn take_field<'a>(
                     return Ok((input, FieldValue::Nil));
                 }
                 if usize::from(field_definition.length) == std::mem::size_of::<f32>() {
-                    let (i, value) = f32!(input, endianness)?;
+                    let (i, value) = streaming::f32(endianness)(input)?;
                     Ok((i, FieldValue::F32(value)))
                 } else {
-                    let count = usize::from(field_definition.length) / std::mem::size_of::<f32>();
-                    let (i, values) =
-                        do_parse!(input, vs: count!(f32!(endianness), count) >> (vs))?;
+                    let value_count = usize::from(field_definition.length) / std::mem::size_of::<f32>();
+                    let (i, values) = count(streaming::f32(endianness), value_count)(input)?;
                     Ok((i, FieldValue::F32Array(values.to_vec())))
                 }
             }
@@ -314,12 +312,11 @@ pub fn take_field<'a>(
                     return Ok((input, FieldValue::Nil));
                 }
                 if usize::from(field_definition.length) == std::mem::size_of::<f64>() {
-                    let (i, value) = f64!(input, endianness)?;
+                    let (i, value) = streaming::f64(endianness)(input)?;
                     Ok((i, FieldValue::F64(value)))
                 } else {
-                    let count = usize::from(field_definition.length) / std::mem::size_of::<f64>();
-                    let (i, values) =
-                        do_parse!(input, vs: count!(f64!(endianness), count) >> (vs))?;
+                    let value_count = usize::from(field_definition.length) / std::mem::size_of::<f64>();
+                    let (i, values) = count(streaming::f64(endianness), value_count)(input)?;
                     Ok((i, FieldValue::F64Array(values.to_vec())))
                 }
             }
@@ -341,13 +338,13 @@ pub fn take_field<'a>(
             11 => {
                 // Unsigned, non-zero 16-bit integer
                 if usize::from(field_definition.length) == std::mem::size_of::<u16>() {
-                    match take_u16(endianness)(input)? {
+                    match streaming::u16(endianness)(input)? {
                         (i, std::u16::MIN) => Ok((i, FieldValue::Nil)),
                         (i, value) => Ok((i, FieldValue::U16(value))),
                     }
                 } else {
                     let value_count = usize::from(field_definition.length) / std::mem::size_of::<u16>();
-                    let (i, values) = count(take_u16(endianness), value_count)(input)?;
+                    let (i, values) = count(streaming::u16(endianness), value_count)(input)?;
                     match values.iter().all(|&v| v == std::u16::MIN) {
                         true => Ok((i, FieldValue::Nil)),
                         false => Ok((i, FieldValue::U16Array(values.to_vec()))),
@@ -357,13 +354,13 @@ pub fn take_field<'a>(
             12 => {
                 // Unsigned, non-zero 32-bit integer
                 if usize::from(field_definition.length) == std::mem::size_of::<u32>() {
-                    match take_u32(endianness)(input)? {
+                    match streaming::u32(endianness)(input)? {
                         (i, std::u32::MIN) => Ok((i, FieldValue::Nil)),
                         (i, value) => Ok((i, FieldValue::U32(value))),
                     }
                 } else {
                     let value_count = usize::from(field_definition.length) / std::mem::size_of::<u32>();
-                    let (i, values) = count(take_u32(endianness), value_count)(input)?;
+                    let (i, values) = count(streaming::u32(endianness), value_count)(input)?;
                     match values.iter().all(|&v| v == std::u32::MIN) {
                         true => Ok((i, FieldValue::Nil)),
                         false => Ok((i, FieldValue::U32Array(values.to_vec()))),
@@ -372,13 +369,13 @@ pub fn take_field<'a>(
             }
             14 => {
                 if usize::from(field_definition.length) == std::mem::size_of::<i64>() {
-                    match take_i64(endianness)(input)? {
+                    match streaming::i64(endianness)(input)? {
                         (i, std::i64::MAX) => Ok((i, FieldValue::Nil)),
                         (i, value) => Ok((i, FieldValue::I64(value))),
                     }
                 } else {
                     let value_count = usize::from(field_definition.length) / std::mem::size_of::<i64>();
-                    let (i, values) = count(take_i64(endianness), value_count)(input)?;
+                    let (i, values) = count(streaming::i64(endianness), value_count)(input)?;
                     match values.iter().all(|&v| v == std::i64::MAX) {
                         true => Ok((i, FieldValue::Nil)),
                         false => Ok((i, FieldValue::I64Array(values.to_vec()))),
@@ -387,13 +384,13 @@ pub fn take_field<'a>(
             }
             15 => {
                 if usize::from(field_definition.length) == std::mem::size_of::<u64>() {
-                    match take_u64(endianness)(input)? {
+                    match streaming::u64(endianness)(input)? {
                         (i, std::u64::MAX) => Ok((i, FieldValue::Nil)),
                         (i, value) => Ok((i, FieldValue::U64(value))),
                     }
                 } else {
                     let value_count = usize::from(field_definition.length) / std::mem::size_of::<u64>();
-                    let (i, values) = count(take_u64(endianness), value_count)(input)?;
+                    let (i, values) = count(streaming::u64(endianness), value_count)(input)?;
                     match values.iter().all(|&v| v == std::u64::MAX) {
                         true => Ok((i, FieldValue::Nil)),
                         false => Ok((i, FieldValue::U64Array(values.to_vec()))),
@@ -402,13 +399,13 @@ pub fn take_field<'a>(
             }
             16 => {
                 if usize::from(field_definition.length) == std::mem::size_of::<u64>() {
-                    match take_u64(endianness)(input)? {
+                    match streaming::u64(endianness)(input)? {
                         (i, std::u64::MIN) => Ok((i, FieldValue::Nil)),
                         (i, value) => Ok((i, FieldValue::U64(value))),
                     }
                 } else {
                     let value_count = usize::from(field_definition.length) / std::mem::size_of::<u64>();
-                    let (i, values) = count(take_u64(endianness), value_count)(input)?;
+                    let (i, values) = count(streaming::u64(endianness), value_count)(input)?;
                     match values.iter().all(|&v| v == std::u64::MIN) {
                         true => Ok((i, FieldValue::Nil)),
                         false => Ok((i, FieldValue::U64Array(values.to_vec()))),

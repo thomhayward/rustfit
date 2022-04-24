@@ -1,7 +1,6 @@
 //! A fast, low-level parser library for Garmin's .FIT format.
 //!
 
-#[macro_use]
 extern crate nom;
 
 mod crc;
@@ -140,7 +139,7 @@ impl<'data> Fit<'data> {
             Ordering::Greater => Ok(Fit {
                     header,
                     header_checksum,
-                    payload: payload,
+                    payload,
                     checksum_bytes: None,
             }),
         }
@@ -278,7 +277,7 @@ impl<'a> Parser<'a> {
         };
         match header.record_type() {
             RecordType::Data => {
-                let ref definition = self.definitions[header.local_type() as usize];
+                let definition = &self.definitions[header.local_type() as usize];
                 match definition {
                     Some(ref def) => {
                         let (input, message) = match parser::take_message_data(def.length)(input) {
@@ -297,7 +296,7 @@ impl<'a> Parser<'a> {
                     }
                     None => Err(Error::UndefinedLocalType {
                             position: self.position,
-                            header: header,
+                            header,
                     }),
                 }
             }
@@ -316,8 +315,8 @@ impl<'a> Parser<'a> {
                     }
                     false => Err(Error::InvalidMessageLength {
                             position: self.position,
-                            header: header,
-                        definition: definition,
+                            header,
+                            definition,
                         }),
                 }
             }
