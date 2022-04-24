@@ -118,10 +118,9 @@ pub fn take_message_definition(header: u8) -> impl Fn(&[u8]) -> IResult<&[u8], M
                 length: base_field_length + devl_field_length,
                 byte_order,
                 fields: process_field_definitions(&fields, 0),
-                developer_fields: match &developer_fields {
-                    Some(fields) => Some(process_field_definitions(&fields, base_field_length)),
-                    None => None,
-                },
+                developer_fields: developer_fields.as_ref().map(|fields| {
+                    process_field_definitions(fields, base_field_length)
+                })
             },
         ))
     }

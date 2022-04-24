@@ -135,13 +135,12 @@ impl<'a> Message<'a> {
     }
     /// Constructs an iterator over the developer fields present in the message, if any exist.
     pub fn developer_fields(&self) -> Option<DeveloperFieldIterator> {
-        match &self.definition.developer_fields {
-            Some(fields) => Some(DeveloperFieldIterator {
+        self.definition.developer_fields.as_ref().map(|fields| {
+            DeveloperFieldIterator {
                 message: self,
-                iterator: fields.iter(),
-            }),
-            None => None,
-        }
+                iterator: fields.iter()
+            }
+        })
     }
 }
 
@@ -149,13 +148,11 @@ impl<'a> Iterator for FieldIterator<'a> {
     type Item = (FieldDefinition, FieldValue);
     #[inline]
     fn next(&mut self) -> Option<(FieldDefinition, FieldValue)> {
-        match self.iterator.next() {
-            Some(field_definition) => match self.message.field(field_definition.number) {
-                Some(field_value) => Some((field_definition.clone(), field_value)),
-                None => None,
-            },
-            None => None,
-        }
+        self.iterator.next().and_then(|field_def| {
+            self.message.field(field_def.number).map(|field_value| {
+                (field_def.clone(), field_value)
+            })
+        })
     }
 }
 
@@ -163,12 +160,10 @@ impl<'a> Iterator for DeveloperFieldIterator<'a> {
     type Item = (FieldDefinition, FieldValue);
     #[inline]
     fn next(&mut self) -> Option<(FieldDefinition, FieldValue)> {
-        match self.iterator.next() {
-            Some(field_definition) => match self.message.developer_field(field_definition.number) {
-                Some(field_value) => Some((field_definition.clone(), field_value)),
-                None => None,
-            },
-            None => None,
-        }
+        self.iterator.next().and_then(|field_def| {
+            self.message.developer_field(field_def.number).map(|field_value| {
+                (field_def.clone(), field_value)
+            })
+        })
     }
 }

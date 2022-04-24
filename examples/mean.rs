@@ -45,7 +45,7 @@ fn main() -> Result<(), Error> {
         let path = Path::new(&argument);
         let filename = path
             .file_name()
-            .unwrap_or_else(|| path.as_os_str())
+            .unwrap_or(path.as_os_str())
             .to_string_lossy();
         let mut file = File::open(&path)?;
         let mut buf: Vec<u8> = Vec::with_capacity(1e6 as usize);
