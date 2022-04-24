@@ -136,37 +136,6 @@ pub fn take_checksum(input: &[u8]) -> IResult<&[u8], u16> {
     streaming::le_u16(input)
 }
 
-// #[inline(always)]
-// pub fn take_u16(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], u16> {
-//     use nom::number::streaming;
-//     streaming::u16(endianness)
-// }
-
-// #[inline(always)]
-// pub fn take_i16(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], i16> {
-//     move |input: &[u8]| i16!(input, endianness)
-// }
-
-// #[inline(always)]
-// pub fn take_u32(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], u32> {
-//     move |input: &[u8]| u32!(input, endianness)
-// }
-
-// #[inline(always)]
-// pub fn take_i32(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], i32> {
-//     move |input: &[u8]| i32!(input, endianness)
-// }
-
-// #[inline(always)]
-// pub fn take_u64(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], u64> {
-//     move |input: &[u8]| u64!(input, endianness)
-// }
-
-// #[inline(always)]
-// pub fn take_i64(endianness: Endianness) -> impl Fn(&[u8]) -> IResult<&[u8], i64> {
-//     move |input: &[u8]| i64!(input, endianness)
-// }
-
 /// Returns a field from `message` using the supplied field definition. Note that the whether
 /// `field_definition` is valid for the message is not checked.
 pub fn take_field<'a>(
